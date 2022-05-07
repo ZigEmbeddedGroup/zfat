@@ -5,74 +5,6 @@
 #define FFCONF_DEF 86631 /* Revision ID */
 
 /*---------------------------------------------------------------------------/
-/ Function Configurations
-/---------------------------------------------------------------------------*/
-
-#define FF_FS_READONLY 0
-/* This option switches read-only configuration. (0:Read/Write or 1:Read-only)
-/  Read-only configuration removes writing API functions, f_write(), f_sync(),
-/  f_unlink(), f_mkdir(), f_chmod(), f_rename(), f_truncate(), f_getfree()
-/  and optional writing functions as well. */
-
-#define FF_FS_MINIMIZE 0
-/* This option defines minimization level to remove some basic API functions.
-/
-/   0: Basic functions are fully enabled.
-/   1: f_stat(), f_getfree(), f_unlink(), f_mkdir(), f_truncate() and f_rename()
-/      are removed.
-/   2: f_opendir(), f_readdir() and f_closedir() are removed in addition to 1.
-/   3: f_lseek() function is removed in addition to 2. */
-
-#define FF_USE_FIND 0
-/* This option switches filtered directory read functions, f_findfirst() and
-/  f_findnext(). (0:Disable, 1:Enable 2:Enable with matching altname[] too) */
-
-#define FF_USE_MKFS 0
-/* This option switches f_mkfs() function. (0:Disable or 1:Enable) */
-
-#define FF_USE_FASTSEEK 0
-/* This option switches fast seek function. (0:Disable or 1:Enable) */
-
-#define FF_USE_EXPAND 0
-/* This option switches f_expand function. (0:Disable or 1:Enable) */
-
-#define FF_USE_CHMOD 0
-/* This option switches attribute manipulation functions, f_chmod() and
-f_utime(). /  (0:Disable or 1:Enable) Also FF_FS_READONLY needs to be 0 to
-enable this option. */
-
-#define FF_USE_LABEL 1
-/* This option switches volume label functions, f_getlabel() and f_setlabel().
-/  (0:Disable or 1:Enable) */
-
-#define FF_USE_FORWARD 0
-/* This option switches f_forward() function. (0:Disable or 1:Enable) */
-
-#define FF_USE_STRFUNC 0
-#define FF_PRINT_LLI 0
-#define FF_PRINT_FLOAT 0
-#define FF_STRF_ENCODE 0
-/* FF_USE_STRFUNC switches string functions, f_gets(), f_putc(), f_puts() and
-/  f_printf().
-/
-/   0: Disable. FF_PRINT_LLI, FF_PRINT_FLOAT and FF_STRF_ENCODE have no effect.
-/   1: Enable without LF-CRLF conversion.
-/   2: Enable with LF-CRLF conversion.
-/
-/  FF_PRINT_LLI = 1 makes f_printf() support long long argument and
-FF_PRINT_FLOAT = 1/2 makes f_printf() support floating point argument. These
-features want C99 or later. /  When FF_LFN_UNICODE >= 1 with LFN enabled, string
-functions convert the character /  encoding in it. FF_STRF_ENCODE selects
-assumption of character encoding ON THE FILE /  to be read/written via those
-functions.
-/
-/   0: ANSI/OEM in current CP
-/   1: Unicode in UTF-16LE
-/   2: Unicode in UTF-16BE
-/   3: Unicode in UTF-8
-*/
-
-/*---------------------------------------------------------------------------/
 / Locale and Namespace Configurations
 /---------------------------------------------------------------------------*/
 
@@ -103,25 +35,6 @@ functions.
 /   950 - Traditional Chinese (DBCS)
 /     0 - Include all code pages above and configured by f_setcp()
 */
-
-#define FF_USE_LFN 0
-#define FF_MAX_LFN 255
-/* The FF_USE_LFN switches the support for LFN (long file name).
-/
-/   0: Disable LFN. FF_MAX_LFN has no effect.
-/   1: Enable LFN with static  working buffer on the BSS. Always NOT
-thread-safe. /   2: Enable LFN with dynamic working buffer on the STACK. /   3:
-Enable LFN with dynamic working buffer on the HEAP.
-/
-/  To enable the LFN, ffunicode.c needs to be added to the project. The LFN
-function /  requiers certain internal working buffer occupies (FF_MAX_LFN + 1) *
-2 bytes and /  additional (FF_MAX_LFN + 44) / 15 * 32 bytes when exFAT is
-enabled. /  The FF_MAX_LFN defines size of the working buffer in UTF-16 code
-unit and it can /  be in range of 12 to 255. It is recommended to be set it 255
-to fully support LFN /  specification. /  When use stack for the working buffer,
-take care on stack overflow. When use heap /  memory for the working buffer,
-memory management functions, ff_memalloc() and /  ff_memfree() exemplified in
-ffsystem.c, need to be added to the project. */
 
 #define FF_LFN_UNICODE 0
 /* This option switches the character encoding on the API when LFN is enabled.
