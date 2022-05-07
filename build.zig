@@ -6,8 +6,11 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("zfat", "demo/main.zig");
-    FatSdk.link(exe, .{});
-    exe.addPackage(FatSdk.getPackage("zfat"));
+
+    const config = FatSdk.Config{};
+    exe.addPackage(FatSdk.getPackage(b, "zfat", config));
+    FatSdk.link(exe, config);
+
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
