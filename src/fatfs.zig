@@ -5,16 +5,60 @@ const c = @cImport({
 });
 const logger = std.log.scoped(.fatfs);
 
+pub const PathChar = c.TCHAR;
+pub const LBA = c.LBA_t;
+pub const FileSize = c.FSIZE_t;
+pub const Path = [:0]const PathChar;
+
+pub fn mkdir(path: Path) !void {
+    try tryFs(api.mkdir(path.ptr));
+}
+
+pub fn unlink(path: Path) !void {
+    try tryFs(api.unlink(path.ptr));
+}
+
+pub fn rename(old_path: Path, new_path: Path) !void {
+    try tryFs(api.rename(old_path.ptr, new_path.ptr));
+}
+
+pub fn stat(path: Path) !c.FILINFO {
+    var res: c.FILINFO = undefined;
+    try tryFs(api.stat(path.ptr));
+    return res;
+}
+
+pub fn chmod(path: Path, attributes: u8, mask: u8) !void {
+    try tryFs(api.unlink(path.ptr, attributes, mask));
+}
+
+pub fn utime(path: Path, file_info: c.FILINFO) !void {
+    try tryFs(api.unlink(path.ptr, &file_info));
+}
+
+pub fn chdir(path: Path) !void {
+    try tryFs(api.chdir(path.ptr));
+}
+
+pub fn chdrive(path: Path) !void {
+    try tryFs(api.chdrive(path.ptr));
+}
+
+pub fn getcwd(buffer: []PathChar) !Path {
+    try tryFs(api.getcwd(buffer.ptr, try std.math.cast(c_uint, buffer.len)));
+    return std.mem.sliceTo(buffer, 0);
+}
+
 pub const FileSystem = struct {
     const Self = @This();
 
     raw: c.FATFS,
 
-    pub fn mount(self: *Self, drive: [:0]const u8, force_mount: bool) !void {
+    pub fn mount(self: *Self, drive: Path, force_mount: bool) !void {
         try tryFs(api.mount(&self.raw, drive.ptr, @boolToInt(force_mount)));
     }
 
-    pub fn unmount(drive: [:0]const u8) !void {
+    pub fn unmount(drive: Path) !void {
         try tryFs(api.unmount(drive.ptr));
     }
 };
@@ -24,7 +68,7 @@ pub const File = struct {
 
     raw: c.FIL,
 
-    pub fn create(path: [:0]const u8) !Self {
+    pub fn create(path: Path) !Self {
         var file = Self{ .raw = undefined };
         try tryFs(api.open(&file.raw, path.ptr, c.FA_WRITE | c.FA_CREATE_ALWAYS));
         return file;
@@ -35,6 +79,44 @@ pub const File = struct {
             logger.err("failed to close file: {s}", .{@errorName(e)});
         };
         file.* = undefined;
+    }
+
+    pub fn sync(file: *Self) !void {
+        try tryFs(api.sync(&file.raw));
+    }
+
+    pub fn truncate(file: *Self) !void {
+        try tryFs(api.truncate(&file.raw));
+    }
+
+    pub fn seekTo(file: *Self, offset: FileSize) !void {
+        try tryFs(api.lseek(&file.raw, offset));
+    }
+
+    pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
+        try tryFs(api.expand(&file.raw, new_size, @boolToInt(force_allocate)));
+    }
+
+    // pub fn forward(self: *Self, streamer: fn([*]const u8,
+
+    pub fn endOfFile(self: Self) bool {
+        return (api.eof(&self.raw) != 0);
+    }
+
+    pub fn hasError(self: Self) bool {
+        return (api.@"error"(&self.raw) != 0);
+    }
+
+    pub fn tell(self: Self) FileSize {
+        return api.tell(&self.raw);
+    }
+
+    pub fn size(self: Self) FileSize {
+        return api.size(&self.raw);
+    }
+
+    pub fn rewind(self: *Self) !void {
+        try self.seekTo(0);
     }
 
     pub const WriteError = error{Overflow} || Error;
@@ -61,8 +143,6 @@ pub const File = struct {
         return Writer{ .context = file };
     }
 };
-
-pub const LBA = c.LBA_t;
 
 pub const Disk = struct {
     const Self = @This();
@@ -126,7 +206,7 @@ pub const Disk = struct {
     };
 };
 
-pub var disks: [10]?*Disk = .{null} ** 10;
+pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
 
 pub const WRITE = c.FA_WRITE;
 pub const CREATE_ALWAYS = c.FA_CREATE_ALWAYS;
@@ -178,7 +258,6 @@ pub const api = struct {
     pub const getlabel = c.f_getlabel; // Get volume label
     pub const setlabel = c.f_setlabel; // Set volume label
     pub const setcp = c.f_setcp; // Set active code page
-
 };
 
 // Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
