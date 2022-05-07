@@ -13,12 +13,12 @@ pub fn build(b: *std.build.Builder) void {
 
     const exe = b.addExecutable("zfat", "demo/main.zig");
     exe.addCSourceFiles(&.{
-        "src/ff.c",
-        "src/ffunicode.c",
-        "src/ffsystem.c",
+        "src/fatfs/ff.c",
+        "src/fatfs/ffunicode.c",
+        "src/fatfs/ffsystem.c",
     }, &.{"-std=c99"});
     exe.addPackage(std.build.Pkg{ .name = "zfat", .path = .{ .path = "src/fatfs.zig" } });
-    exe.addIncludePath("src");
+    exe.addIncludePath("src/fatfs");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
