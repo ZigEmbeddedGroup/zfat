@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const c = @cImport({
     @cInclude("ff.h");
     @cInclude("diskio.h");
@@ -24,7 +25,7 @@ pub fn rename(old_path: Path, new_path: Path) !void {
 
 pub fn stat(path: Path) !c.FILINFO {
     var res: c.FILINFO = undefined;
-    try tryFs(api.stat(path.ptr));
+    try tryFs(api.stat(path.ptr, &res));
     return res;
 }
 
@@ -63,14 +64,63 @@ pub const FileSystem = struct {
     }
 };
 
+pub const Dir = struct {
+    const Self = @This();
+
+    raw: c.DIR,
+
+    pub fn open(path: Path) !Self {
+        var dir = Self{ .raw = undefined };
+        try tryFs(api.opendir(&dir.raw, path.ptr));
+        return dir;
+    }
+
+    pub fn close(dir: *Self) void {
+        tryFs(api.closedir(&dir.raw)) catch |e| {
+            logger.err("failed to close directory: {s}", .{@errorName(e)});
+        };
+        dir.* = undefined;
+    }
+
+    pub fn next(dir: *Self) !?c.FILINFO {
+        var res: c.FILINFO = undefined;
+        try tryFs(api.readdir(&dir.raw, &res));
+        if (res.fname[0] == 0)
+            return null;
+        return res;
+    }
+
+    pub fn rewind(dir: *Self) !void {
+        try tryFs(api.f_readdir(&dir.raw, null));
+    }
+};
+
 pub const File = struct {
     const Self = @This();
 
     raw: c.FIL,
 
+    /// Creates a new file. If the file is existing, it will be truncated and overwritten.
+    /// File access is read and write.
     pub fn create(path: Path) !Self {
         var file = Self{ .raw = undefined };
-        try tryFs(api.open(&file.raw, path.ptr, c.FA_WRITE | c.FA_CREATE_ALWAYS));
+        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_WRITE | c.FA_CREATE_ALWAYS));
+        return file;
+    }
+
+    /// Opens a file. The function fails if the file is not existing.
+    /// File access is read only.
+    pub fn openRead(path: Path) !Self {
+        var file = Self{ .raw = undefined };
+        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_OPEN_EXISTING));
+        return file;
+    }
+
+    /// Opens the file if it is existing. If not, a new file will be created.
+    /// File access is read and write.
+    pub fn openWrite(path: Path) !Self {
+        var file = Self{ .raw = undefined };
+        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_WRITE | c.FA_OPEN_ALWAYS));
         return file;
     }
 
@@ -122,14 +172,14 @@ pub const File = struct {
     pub const WriteError = error{Overflow} || Error;
     pub fn write(file: *Self, data: []const u8) WriteError!usize {
         var written: c_uint = 0;
-        try tryFs(api.write(&file.raw, data.ptr, try std.math.cast(c_uint, data.len), &written));
+        try tryFs(api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
     pub const ReadError = error{Overflow} || Error;
     pub fn read(file: *Self, data: []u8) ReadError!usize {
         var written: c_uint = 0;
-        try tryFs(api.read(&file.raw, data.ptr, try std.math.cast(c_uint, data.len), &written));
+        try tryFs(api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
@@ -260,42 +310,52 @@ pub const api = struct {
     pub const setcp = c.f_setcp; // Set active code page
 };
 
-// Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
-// bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
-// bit24:21  Month (1..12)
-// bit20:16  Day of the month (1..31)
-// bit15:11  Hour (0..23)
-// bit10:5  Minute (0..59)
-// bit4:0  Second / 2 (0..29, e.g. 25 for 50)
-export fn get_fattime() c.DWORD {
-    const timestamp = std.time.timestamp() - std.time.epoch.dos;
+const RtcExport = struct {
 
-    const epoch_secs = std.time.epoch.EpochSeconds{
-        .secs = @intCast(u64, timestamp),
-    };
+    // Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
+    // bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
+    // bit24:21  Month (1..12)
+    // bit20:16  Day of the month (1..31)
+    // bit15:11  Hour (0..23)
+    // bit10:5  Minute (0..59)
+    // bit4:0  Second / 2 (0..29, e.g. 25 for 50)
+    export fn get_fattime() c.DWORD {
+        const timestamp = std.time.timestamp() - std.time.epoch.dos;
 
-    const epoch_day = epoch_secs.getEpochDay();
-    const day_secs = epoch_secs.getDaySeconds();
+        const epoch_secs = std.time.epoch.EpochSeconds{
+            .secs = @intCast(u64, timestamp),
+        };
 
-    const year_and_day = epoch_day.calculateYearDay();
-    const month_and_day = year_and_day.calculateMonthDay();
+        const epoch_day = epoch_secs.getEpochDay();
+        const day_secs = epoch_secs.getDaySeconds();
 
-    const year: u32 = year_and_day.year;
-    const month: u32 = @enumToInt(month_and_day.month);
-    const day: u32 = month_and_day.day_index + 1;
+        const year_and_day = epoch_day.calculateYearDay();
+        const month_and_day = year_and_day.calculateMonthDay();
 
-    const hour: u32 = day_secs.getHoursIntoDay();
-    const minute: u32 = day_secs.getMinutesIntoHour();
-    const second: u32 = day_secs.getSecondsIntoMinute();
+        const year: u32 = year_and_day.year;
+        const month: u32 = @enumToInt(month_and_day.month);
+        const day: u32 = month_and_day.day_index + 1;
 
-    return 0 |
-        (year << 25) | // bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
-        (month << 21) | // bit24:21  Month (1..12)
-        (day << 16) | // bit20:16  Day of the month (1..31)
-        (hour << 11) | // bit15:11  Hour (0..23)
-        (minute << 5) | // bit10:5  Minute (0..59)
-        ((second / 2) << 0) // bit4:0  Second / 2 (0..29, e.g. 25 for 50)
-    ;
+        const hour: u32 = day_secs.getHoursIntoDay();
+        const minute: u32 = day_secs.getMinutesIntoHour();
+        const second: u32 = day_secs.getSecondsIntoMinute();
+
+        return 0 |
+            (year << 25) | // bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
+            (month << 21) | // bit24:21  Month (1..12)
+            (day << 16) | // bit20:16  Day of the month (1..31)
+            (hour << 11) | // bit15:11  Hour (0..23)
+            (minute << 5) | // bit10:5  Minute (0..59)
+            ((second / 2) << 0) // bit4:0  Second / 2 (0..29, e.g. 25 for 50)
+        ;
+    }
+};
+
+comptime {
+    if (config.has_rtc) {
+        // @compileLog("...", config.has_rtc);
+        _ = RtcExport;
+    }
 }
 
 export fn disk_status(

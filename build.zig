@@ -11,6 +11,7 @@ pub fn build(b: *std.build.Builder) void {
     exe.addPackage(FatSdk.getPackage(b, "zfat", config));
     FatSdk.link(exe, config);
 
+    exe.linkLibC();
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();

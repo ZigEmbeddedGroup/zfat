@@ -11,14 +11,15 @@ const Sdk = @This();
 pub fn getPackage(b: *std.build.Builder, name: []const u8, config: Config) std.build.Pkg {
     const options = b.addOptions();
 
-    _ = config;
+    options.addOption(bool, "has_rtc", (config.rtc != .static));
+
     // inline for (comptime std.meta.fields(Config)) |fld| {
     //     options.addOption(fld.field_type, fld.name, @field(config, fld.name));
     // }
 
     return std.build.Pkg{
         .name = name,
-        .path = .{ .path = sdk_root ++ "/src/fatfs.zig" },
+        .source = .{ .path = sdk_root ++ "/src/fatfs.zig" },
         .dependencies = &.{options.getPackage("config")},
     };
 }
@@ -30,7 +31,7 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
         sdk_root ++ "/src/fatfs/ffsystem.c",
     }, &.{"-std=c99"});
     exe.addIncludePath(sdk_root ++ "/src/fatfs");
-    exe.linkLibC();
+    // exe.linkLibC();
 
     inline for (comptime std.meta.fields(Config)) |fld| {
         addConfigField(exe, config, fld.name);
@@ -74,7 +75,7 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
         .dynamic => exe.defineCMacro("FF_FS_NORTC", "0"),
         .static => |date| {
             exe.defineCMacro("FF_FS_NORTC", "1");
-            exe.defineCMacro("FF_NORTC_MON", exe.builder.fmt("{d}", .{@enumToInt(date.month)}));
+            exe.defineCMacro("FF_NORTC_MON", exe.builder.fmt("{d}", .{date.month.numeric()}));
             exe.defineCMacro("FF_NORTC_MDAY", exe.builder.fmt("{d}", .{date.day}));
             exe.defineCMacro("FF_NORTC_YEAR", exe.builder.fmt("{d}", .{date.year}));
         },
