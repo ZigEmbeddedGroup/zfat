@@ -6,6 +6,8 @@ const c = @cImport({
 });
 const logger = std.log.scoped(.fatfs);
 
+pub const volume_count = c.FF_VOLUMES;
+
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
 pub const FileSize = c.FSIZE_t;
@@ -100,28 +102,58 @@ pub const File = struct {
 
     raw: c.FIL,
 
+    pub const Mode = enum(u8) {
+        open_existing = c.FA_OPEN_EXISTING,
+        create_new = c.FA_CREATE_NEW,
+        create_always = c.FA_CREATE_ALWAYS,
+        open_always = c.FA_OPEN_ALWAYS,
+        open_append = c.FA_OPEN_APPEND,
+    };
+
+    pub const Access = enum(u8) {
+        read_only = c.FA_READ,
+        write_only = c.FA_WRITE,
+        read_write = c.FA_READ | c.FA_WRITE,
+    };
+
+    pub const OpenFlags = struct {
+        access: Access = .read_only,
+        mode: Mode = .open_existing,
+    };
+
+    pub fn open(path: Path, flags: OpenFlags) !Self {
+        const int_flags = @enumToInt(flags.mode) | @enumToInt(flags.access);
+
+        var file = Self{ .raw = undefined };
+        try tryFs(api.open(&file.raw, path.ptr, int_flags));
+        return file;
+    }
+
     /// Creates a new file. If the file is existing, it will be truncated and overwritten.
     /// File access is read and write.
     pub fn create(path: Path) !Self {
-        var file = Self{ .raw = undefined };
-        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_WRITE | c.FA_CREATE_ALWAYS));
-        return file;
+        return open(path, .{
+            .mode = .create_always,
+            .access = .read_write,
+        });
     }
 
     /// Opens a file. The function fails if the file is not existing.
     /// File access is read only.
     pub fn openRead(path: Path) !Self {
-        var file = Self{ .raw = undefined };
-        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_OPEN_EXISTING));
-        return file;
+        return open(path, .{
+            .mode = .open_existing,
+            .access = .read_only,
+        });
     }
 
     /// Opens the file if it is existing. If not, a new file will be created.
     /// File access is read and write.
     pub fn openWrite(path: Path) !Self {
-        var file = Self{ .raw = undefined };
-        try tryFs(api.open(&file.raw, path.ptr, c.FA_READ | c.FA_WRITE | c.FA_OPEN_ALWAYS));
-        return file;
+        return open(path, .{
+            .mode = .open_always,
+            .access = .read_write,
+        });
     }
 
     pub fn close(file: *Self) void {
@@ -257,6 +289,14 @@ pub const Disk = struct {
 };
 
 pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
+
+pub const Attributes = struct {
+    pub const read_only = c.AM_RDO;
+    pub const hidden = c.AM_HID;
+    pub const system = c.AM_SYS;
+    pub const directory = c.AM_DIR;
+    pub const archive = c.AM_ARC;
+};
 
 pub const WRITE = c.FA_WRITE;
 pub const CREATE_ALWAYS = c.FA_CREATE_ALWAYS;
