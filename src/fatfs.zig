@@ -8,6 +8,7 @@ const logger = std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
+pub const FileInfo = c.FILINFO;
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
 pub const FileSize = c.FSIZE_t;
@@ -25,8 +26,8 @@ pub fn rename(old_path: Path, new_path: Path) !void {
     try tryFs(api.rename(old_path.ptr, new_path.ptr));
 }
 
-pub fn stat(path: Path) !c.FILINFO {
-    var res: c.FILINFO = undefined;
+pub fn stat(path: Path) !FileInfo {
+    var res: FileInfo = undefined;
     try tryFs(api.stat(path.ptr, &res));
     return res;
 }
@@ -35,7 +36,7 @@ pub fn chmod(path: Path, attributes: u8, mask: u8) !void {
     try tryFs(api.unlink(path.ptr, attributes, mask));
 }
 
-pub fn utime(path: Path, file_info: c.FILINFO) !void {
+pub fn utime(path: Path, file_info: FileInfo) !void {
     try tryFs(api.unlink(path.ptr, &file_info));
 }
 
@@ -84,8 +85,8 @@ pub const Dir = struct {
         dir.* = undefined;
     }
 
-    pub fn next(dir: *Self) !?c.FILINFO {
-        var res: c.FILINFO = undefined;
+    pub fn next(dir: *Self) !?FileInfo {
+        var res: FileInfo = undefined;
         try tryFs(api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
