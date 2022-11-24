@@ -8,11 +8,13 @@ const logger = std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
-pub const FileInfo = c.FILINFO;
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
 pub const FileSize = c.FSIZE_t;
 pub const Path = [:0]const PathChar;
+
+pub const WORD = c.WORD;
+pub const DWORD = c.DWORD;
 
 pub fn mkdir(path: Path) !void {
     try tryFs(api.mkdir(path.ptr));
@@ -27,16 +29,16 @@ pub fn rename(old_path: Path, new_path: Path) !void {
 }
 
 pub fn stat(path: Path) !FileInfo {
-    var res: FileInfo = undefined;
+    var res: c.FILINFO = undefined;
     try tryFs(api.stat(path.ptr, &res));
-    return res;
+    return FileInfo.fromFILINFO(res);
 }
 
 pub fn chmod(path: Path, attributes: u8, mask: u8) !void {
     try tryFs(api.unlink(path.ptr, attributes, mask));
 }
 
-pub fn utime(path: Path, file_info: FileInfo) !void {
+pub fn utime(path: Path, file_info: c.FILINFO) !void {
     try tryFs(api.unlink(path.ptr, &file_info));
 }
 
@@ -51,6 +53,58 @@ pub fn chdrive(path: Path) !void {
 pub fn getcwd(buffer: []PathChar) !Path {
     try tryFs(api.getcwd(buffer.ptr, try std.math.cast(c_uint, buffer.len)));
     return std.mem.sliceTo(buffer, 0);
+}
+
+pub const DiskFormat = enum(u8) {
+    fat = c.FM_FAT,
+    fat32 = c.FM_FAT32,
+    exfat = c.FM_EXFAT,
+    any = c.FM_ANY,
+};
+
+pub const FatTables = enum(u8) {
+    one = 1,
+    two = 2,
+};
+
+pub const FormatOptions = struct {
+    /// Specifies a combination of FAT type flags, FM_FAT, FM_FAT32, FM_EXFAT and bitwise-or of these three,
+    // FM_ANY. FM_EXFAT is ignored when exFAT is not enabled. These flags specify which type of FAT volume
+    // to be created. If two or more types are specified, one out of them will be selected depends on the
+    // volume size and au_size. The flag FM_SFD specifies to create the volume on the drive in SFD format.
+    // The default value is FM_ANY.
+    filesystem: DiskFormat,
+
+    /// Specifies number of FAT copies on the FAT/FAT32 volume. Valid value for this member is 1 or 2.
+    /// The default value (0) and any invaid value gives 1. If the FAT type is exFAT, this member has no effect.
+    fats: FatTables = .one,
+
+    /// Specifies alignment of the volume data area (file allocation pool, usually erase block boundary of flash memory media) in unit of sector. The valid value for this member is between 1 and 32768 inclusive in power of 2. If a zero (the default value) or any invalid value is given, the function obtains the block size from lower layer with disk_ioctl function.
+    sector_align: c_uint,
+
+    /// Specifies size of the allocation unit (cluter) in unit of byte. The valid value is power of 2 between
+    /// sector size and 128 * sector size inclusive for FAT/FAT32 volume, or up to 16 MB for exFAT volume. If
+    /// a zero (default value) or any invalid value is given, the function uses default allocation unit size
+    /// depends on the volume size.
+    cluster_size: u32 = 0,
+
+    /// Specifies number of root directory entries on the FAT volume. Valid value for this member is up to 32768
+    /// and aligned to sector size / 32. The default value (0) and any invaid value gives 512. If the FAT type is
+    /// FAT32 or exFAT, this member has no effect.
+    rootdir_size: c_uint = 512,
+
+    use_partitions: bool = false,
+};
+
+pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) !void {
+    const opts = c.MKFS_PARM{
+        .fmt = @enumToInt(options.filesystem) | if (!options.use_partitions) @intCast(u8, c.FM_SFD) else 0,
+        .n_fat = @enumToInt(options.fats),
+        .@"align" = options.sector_align,
+        .au_size = options.cluster_size,
+        .n_root = options.rootdir_size,
+    };
+    try tryFs(api.mkfs(path.ptr, &opts, workspace.ptr, @intCast(c_uint, std.math.min(workspace.len, std.math.maxInt(c_uint)))));
 }
 
 pub const FileSystem = struct {
@@ -86,15 +140,111 @@ pub const Dir = struct {
     }
 
     pub fn next(dir: *Self) !?FileInfo {
-        var res: FileInfo = undefined;
+        var res: c.FILINFO = undefined;
         try tryFs(api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
-        return res;
+        return FileInfo.fromFILINFO(res);
     }
 
     pub fn rewind(dir: *Self) !void {
         try tryFs(api.f_readdir(&dir.raw, null));
+    }
+};
+
+pub const Attributes = struct {
+    read_only: bool,
+    hidden: bool,
+    system: bool,
+    archive: bool,
+};
+
+pub const FileInfo = struct {
+    pub fn fromFILINFO(info: c.FILINFO) FileInfo {
+        return FileInfo{
+            .size = info.fsize,
+            .date = Date.fromFDate(info.fdate),
+            .time = Time.fromFTime(info.ftime),
+            .kind = if ((info.fattrib & c.AM_DIR) != 0) .Directory else .File,
+            .attributes = Attributes{
+                .read_only = ((info.fattrib) & c.AM_RDO) != 0,
+                .hidden = ((info.fattrib) & c.AM_HID) != 0,
+                .system = ((info.fattrib) & c.AM_SYS) != 0,
+                .archive = ((info.fattrib) & c.AM_ARC) != 0,
+            },
+            .name_buffer = info.fname,
+            .altname_buffer = if (@hasField(c.FILINFO, "altname")) info.altname else [1]u8{0},
+        };
+    }
+
+    size: u64,
+    date: Date,
+    time: Time,
+    kind: Kind,
+    attributes: Attributes,
+
+    name_buffer: [max_name_len + 1]u8,
+    altname_buffer: [max_altname_len + 1]u8,
+
+    pub fn name(self: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&self.name_buffer, 0);
+    }
+
+    pub fn altName(self: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&self.altname_buffer, 0);
+    }
+
+    const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
+    const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
+};
+
+pub const Kind = enum { File, Directory };
+
+pub const Date = struct {
+    year: u16,
+    month: std.time.epoch.Month,
+    day: u8,
+
+    pub fn fromFDate(val: u16) Date {
+        return Date{
+            .year = 1980 + (val >> 9),
+            .month = @intToEnum(std.time.epoch.Month, @truncate(u4, (val >> 5) & 0x0F)),
+            .day = @truncate(u8, (val >> 0) & 0x15),
+        };
+    }
+
+    pub fn format(date: Date, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
+            date.year,
+            @enumToInt(date.month),
+            date.day,
+        });
+    }
+};
+
+pub const Time = struct {
+    hour: u8,
+    minute: u8,
+    second: u8,
+
+    pub fn fromFTime(val: u16) Time {
+        return Time{
+            .hour = @truncate(u8, (val >> 11)),
+            .minute = @truncate(u8, (val >> 5) & 0x3F),
+            .second = 2 * @truncate(u8, (val >> 0) & 0x1F),
+        };
+    }
+
+    pub fn format(time: Time, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("{d:0>2}:{d:0>2}:{d:0>2}", .{
+            time.hour,
+            time.minute,
+            time.second,
+        });
     }
 };
 
@@ -291,14 +441,6 @@ pub const Disk = struct {
 
 pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
 
-pub const Attributes = struct {
-    pub const read_only = c.AM_RDO;
-    pub const hidden = c.AM_HID;
-    pub const system = c.AM_SYS;
-    pub const directory = c.AM_DIR;
-    pub const archive = c.AM_ARC;
-};
-
 pub const WRITE = c.FA_WRITE;
 pub const CREATE_ALWAYS = c.FA_CREATE_ALWAYS;
 pub const OK = c.FR_OK;
@@ -402,14 +544,14 @@ comptime {
 export fn disk_status(
     pdrv: c.BYTE, // Physical drive nmuber to identify the drive */
 ) c.DSTATUS {
-    logger.info("disk.status({})", .{pdrv});
+    logger.debug("disk.status({})", .{pdrv});
 
     const disk = disks[pdrv] orelse return c.STA_NOINIT;
     return disk.getStatus().toInteger();
 }
 
 export fn disk_initialize(pdrv: c.BYTE) c.DSTATUS {
-    logger.info("disk.initialize({})", .{pdrv});
+    logger.debug("disk.initialize({})", .{pdrv});
 
     const disk = disks[pdrv] orelse return c.STA_NOINIT;
 
@@ -428,7 +570,7 @@ export fn disk_read(
     count: c.UINT, // Number of sectors to read */
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
-    logger.info("disk.read({}, {*}, {}, {})", .{ pdrv, buff, sector, count });
+    logger.debug("disk.read({}, {*}, {}, {})", .{ pdrv, buff, sector, count });
     return Disk.mapResult(disk.read(buff, sector, count));
 }
 
@@ -439,7 +581,7 @@ export fn disk_write(
     count: c.UINT, // Number of sectors to write */
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
-    logger.info("disk.write({}, {*}, {}, {})", .{ pdrv, buff, sector, count });
+    logger.debug("disk.write({}, {*}, {}, {})", .{ pdrv, buff, sector, count });
     return Disk.mapResult(disk.write(buff, sector, count));
 }
 
@@ -449,7 +591,7 @@ export fn disk_ioctl(
     buff: [*]u8, // Buffer to send/receive control data */
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
-    logger.info("disk.ioctl({}, {}, {*})", .{ pdrv, cmd, buff });
+    logger.debug("disk.ioctl({}, {}, {*})", .{ pdrv, cmd, buff });
     return Disk.mapResult(disk.ioctl(@intToEnum(IoCtl, cmd), buff));
 }
 
@@ -502,19 +644,43 @@ pub fn tryFs(code: c.FRESULT) Error!void {
 }
 
 pub const IoCtl = enum(u8) {
-    /// Complete pending write process (needed at FF_FS_READONLY == 0)
+    /// Complete pending write process (needed at FF_FS_READONLY == 0).
+    ///
+    /// Makes sure that the device has finished pending write process. If the disk I/O layer or
+    /// storage device has a write-back cache, the dirty cache data must be committed to the medium
+    /// immediately. Nothing to do for this command if each write operation to the medium is
+    /// completed in the disk_write function.
     sync = @intCast(u8, c.CTRL_SYNC),
 
     /// Get media size (needed at FF_USE_MKFS == 1)
+    /// Retrieves number of available sectors, the largest allowable LBA + 1, on the drive into the
+    /// LBA_t variable that pointed by buff. This command is used by f_mkfs and f_fdisk function to
+    /// determine the size of volume/partition to be created. It is required when FF_USE_MKFS == 1.
     get_sector_count = @intCast(u8, c.GET_SECTOR_COUNT),
 
     /// Get sector size (needed at FF_MAX_SS != FF_MIN_SS)
+    /// Retrieves sector size, minimum data unit for generic read/write, into the WORD variable that
+    /// pointed by buff. Valid sector sizes are 512, 1024, 2048 and 4096. This command is required
+    /// only if FF_MAX_SS > FF_MIN_SS. When FF_MAX_SS == FF_MIN_SS, this command will be never used
+    /// and the read/write function must work in FF_MAX_SS bytes/sector.
     get_sector_size = @intCast(u8, c.GET_SECTOR_SIZE),
 
     /// Get erase block size (needed at FF_USE_MKFS == 1)
+    /// Retrieves erase block size in unit of sector of the flash memory media into the DWORD variable
+    /// that pointed by buff. The allowable value is 1 to 32768 in power of 2. Return 1 if the value is
+    /// unknown or non flash memory media. This command is used by only f_mkfs function and it attempts
+    /// to align data area on the suggested block boundary. It is required when FF_USE_MKFS == 1.
+    /// Note that FatFs does not have FTL (flash translation layer). Either disk I/O layter or storage
+    /// device must have an FTL in it.
     get_block_size = @intCast(u8, c.GET_BLOCK_SIZE),
 
     /// Inform device that the data on the block of sectors is no longer used (needed at FF_USE_TRIM == 1)
+    /// Informs the disk I/O layter or the storage device that the data on the block of sectors is no longer
+    /// needed and it can be erased. The sector block is specified in an LBA_t array {<Start LBA>, <End LBA>}
+    /// that pointed by buff. This is an identical command to Trim of ATA device. Nothing to do for this
+    /// command if this funcion is not supported or not a flash memory device. FatFs does not check the result
+    /// code and the file function is not affected even if the sector block was not erased well. This command
+    /// is called on remove a cluster chain and in the f_mkfs function. It is required when FF_USE_TRIM == 1.
     trim = @intCast(u8, c.CTRL_TRIM),
 
     _,
