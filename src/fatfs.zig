@@ -380,11 +380,11 @@ pub const File = struct {
 pub const Disk = struct {
     const Self = @This();
 
-    getStatusFn: std.meta.FnPtr(fn (self: *Self) Status),
-    initializeFn: std.meta.FnPtr(fn (self: *Self) Self.Error!Status),
-    readFn: std.meta.FnPtr(fn (self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void),
-    writeFn: std.meta.FnPtr(fn (self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void),
-    ioctlFn: std.meta.FnPtr(fn (self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void),
+    getStatusFn: *const fn (self: *Self) Status,
+    initializeFn: *const fn (self: *Self) Self.Error!Status,
+    readFn: *const fn (self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
+    writeFn: *const fn (self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
+    ioctlFn: *const fn (self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void,
 
     pub fn getStatus(self: *Self) Status {
         return self.getStatusFn(self);
