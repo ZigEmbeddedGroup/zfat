@@ -8,7 +8,7 @@ const sdk_root = sdkRoot();
 
 const Sdk = @This();
 
-pub fn getPackage(b: *std.build.Builder, name: []const u8, config: Config) std.build.Pkg {
+pub fn createModule(b: *std.build.Builder, config: Config) *std.build.Module {
     const options = b.addOptions();
 
     options.addOption(bool, "has_rtc", (config.rtc != .static));
@@ -17,11 +17,15 @@ pub fn getPackage(b: *std.build.Builder, name: []const u8, config: Config) std.b
     //     options.addOption(fld.field_type, fld.name, @field(config, fld.name));
     // }
 
-    return std.build.Pkg{
-        .name = name,
-        .source = .{ .path = sdk_root ++ "/src/fatfs.zig" },
-        .dependencies = &.{options.getPackage("config")},
-    };
+    return b.createModule(.{
+        .source_file = .{ .path = sdk_root ++ "/src/fatfs.zig" },
+        .dependencies = &.{
+            .{
+                .name = "config",
+                .module = options.createModule(),
+            },
+        },
+    });
 }
 
 pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
