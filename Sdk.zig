@@ -20,10 +20,7 @@ pub fn createModule(b: *std.build.Builder, config: Config) *std.build.Module {
     return b.createModule(.{
         .source_file = .{ .path = sdk_root ++ "/src/fatfs.zig" },
         .dependencies = &.{
-            .{
-                .name = "config",
-                .module = options.createModule(),
-            },
+            .{ .name = "config", .module = options.createModule() },
         },
     });
 }
