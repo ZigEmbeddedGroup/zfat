@@ -40,11 +40,11 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
 
     switch (config.volumes) {
         .count => |count| {
-            exe.defineCMacro("FF_VOLUMES", exe.builder.fmt("{d}", .{count}));
+            exe.defineCMacro("FF_VOLUMES", exe.step.owner.fmt("{d}", .{count}));
             exe.defineCMacro("FF_STR_VOLUME_ID", "0");
         },
         .named => |strings| {
-            var list = std.ArrayList(u8).init(exe.builder.allocator);
+            var list = std.ArrayList(u8).init(exe.step.owner.allocator);
             for (strings) |name| {
                 if (list.items.len > 0) {
                     list.appendSlice(", ") catch @panic("out of memory");
@@ -54,7 +54,7 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
                 }) catch @panic("out of memory");
             }
 
-            exe.defineCMacro("FF_VOLUMES", exe.builder.fmt("{d}", .{strings.len}));
+            exe.defineCMacro("FF_VOLUMES", exe.step.owner.fmt("{d}", .{strings.len}));
             exe.defineCMacro("FF_STR_VOLUME_ID", "1");
             exe.defineCMacro("FF_VOLUME_STRS", list.items);
         },
@@ -62,13 +62,13 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
 
     switch (config.sector_size) {
         .static => |size| {
-            const str = exe.builder.fmt("{d}", .{@enumToInt(size)});
+            const str = exe.step.owner.fmt("{d}", .{@enumToInt(size)});
             exe.defineCMacro("FF_MIN_SS", str);
             exe.defineCMacro("FF_MAX_SS", str);
         },
         .dynamic => |range| {
-            exe.defineCMacro("FF_MIN_SS", exe.builder.fmt("{d}", .{@enumToInt(range.minimum)}));
-            exe.defineCMacro("FF_MAX_SS", exe.builder.fmt("{d}", .{@enumToInt(range.maximum)}));
+            exe.defineCMacro("FF_MIN_SS", exe.step.owner.fmt("{d}", .{@enumToInt(range.minimum)}));
+            exe.defineCMacro("FF_MAX_SS", exe.step.owner.fmt("{d}", .{@enumToInt(range.maximum)}));
         },
     }
 
@@ -76,9 +76,9 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
         .dynamic => exe.defineCMacro("FF_FS_NORTC", "0"),
         .static => |date| {
             exe.defineCMacro("FF_FS_NORTC", "1");
-            exe.defineCMacro("FF_NORTC_MON", exe.builder.fmt("{d}", .{date.month.numeric()}));
-            exe.defineCMacro("FF_NORTC_MDAY", exe.builder.fmt("{d}", .{date.day}));
-            exe.defineCMacro("FF_NORTC_YEAR", exe.builder.fmt("{d}", .{date.year}));
+            exe.defineCMacro("FF_NORTC_MON", exe.step.owner.fmt("{d}", .{date.month.numeric()}));
+            exe.defineCMacro("FF_NORTC_MDAY", exe.step.owner.fmt("{d}", .{date.day}));
+            exe.defineCMacro("FF_NORTC_YEAR", exe.step.owner.fmt("{d}", .{date.year}));
         },
     }
 }
@@ -91,11 +91,11 @@ fn addConfigField(exe: *std.build.LibExeObjStep, config: Config, comptime field_
     const str_value: []const u8 = if (Type == VolumeKind or Type == SectorSize or Type == RtcConfig)
         return // we don't emit these automatically
     else if (type_info == .Enum)
-        exe.builder.fmt("{d}", .{@enumToInt(value)})
+        exe.step.owner.fmt("{d}", .{@enumToInt(value)})
     else if (type_info == .Int)
-        exe.builder.fmt("{d}", .{value})
+        exe.step.owner.fmt("{d}", .{value})
     else if (Type == bool)
-        exe.builder.fmt("{d}", .{@boolToInt(value)})
+        exe.step.owner.fmt("{d}", .{@boolToInt(value)})
     else if (Type == []const u8)
         value
     else {
