@@ -16,42 +16,51 @@ pub const Path = [:0]const PathChar;
 pub const WORD = c.WORD;
 pub const DWORD = c.DWORD;
 
-pub fn mkdir(path: Path) !void {
-    try tryFs(api.mkdir(path.ptr));
+pub const MkDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn mkdir(path: Path) MkDirError.Error!void {
+    try MkDirError.throw(api.mkdir(path.ptr));
 }
 
-pub fn unlink(path: Path) !void {
-    try tryFs(api.unlink(path.ptr));
+pub const UnlinkError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub fn unlink(path: Path) UnlinkError.Error!void {
+    try UnlinkError.throw(api.unlink(path.ptr));
 }
 
-pub fn rename(old_path: Path, new_path: Path) !void {
-    try tryFs(api.rename(old_path.ptr, new_path.ptr));
+pub const RenameError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub fn rename(old_path: Path, new_path: Path) RenameError.Error!void {
+    try RenameError.throw(api.rename(old_path.ptr, new_path.ptr));
 }
 
-pub fn stat(path: Path) !FileInfo {
+pub const StatError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn stat(path: Path) StatError.Error!FileInfo {
     var res: c.FILINFO = undefined;
-    try tryFs(api.stat(path.ptr, &res));
+    try StatError.throw(api.stat(path.ptr, &res));
     return FileInfo.fromFILINFO(res);
 }
 
-pub fn chmod(path: Path, attributes: u8, mask: u8) !void {
-    try tryFs(api.unlink(path.ptr, attributes, mask));
+pub const ChmodError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn chmod(path: Path, attributes: u8, mask: u8) ChmodError.Error!void {
+    try ChmodError.throw(api.unlink(path.ptr, attributes, mask));
 }
 
-pub fn utime(path: Path, file_info: c.FILINFO) !void {
-    try tryFs(api.unlink(path.ptr, &file_info));
+pub const UTimeError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn utime(path: Path, file_info: c.FILINFO) UTimeError.Error!void {
+    try UTimeError.throw(api.unlink(path.ptr, &file_info));
 }
 
-pub fn chdir(path: Path) !void {
-    try tryFs(api.chdir(path.ptr));
+pub const ChDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn chdir(path: Path) ChDirError.Error!void {
+    try ChDirError.throw(api.chdir(path.ptr));
 }
 
-pub fn chdrive(path: Path) !void {
-    try tryFs(api.chdrive(path.ptr));
+pub const ChDriveError = ErrorSet(&.{FR_INVALID_DRIVE});
+pub fn chdrive(path: Path) ChDriveError.Error!void {
+    try ChDriveError.throw(api.chdrive(path.ptr));
 }
 
-pub fn getcwd(buffer: []PathChar) !Path {
-    try tryFs(api.getcwd(buffer.ptr, try std.math.cast(c_uint, buffer.len)));
+pub const GetCwdError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub fn getcwd(buffer: []PathChar) GetCwdError.Error!Path {
+    try GetCwdError.throw(api.getcwd(buffer.ptr, try std.math.cast(c_uint, buffer.len)));
     return std.mem.sliceTo(buffer, 0);
 }
 
@@ -96,7 +105,8 @@ pub const FormatOptions = struct {
     use_partitions: bool = false,
 };
 
-pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) !void {
+pub const MkfsError = ErrorSet(&.{ FR_DISK_ERR, FR_NOT_READY, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_MKFS_ABORTED, FR_INVALID_PARAMETER, FR_NOT_ENOUGH_CORE });
+pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError.Error!void {
     const opts = c.MKFS_PARM{
         .fmt = @enumToInt(options.filesystem) | if (!options.use_partitions) @intCast(u8, c.FM_SFD) else 0,
         .n_fat = @enumToInt(options.fats),
@@ -104,7 +114,7 @@ pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) !void {
         .au_size = options.cluster_size,
         .n_root = options.rootdir_size,
     };
-    try tryFs(api.mkfs(path.ptr, &opts, workspace.ptr, @intCast(c_uint, std.math.min(workspace.len, std.math.maxInt(c_uint)))));
+    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @intCast(c_uint, std.math.min(workspace.len, std.math.maxInt(c_uint)))));
 }
 
 pub const FileSystem = struct {
@@ -112,12 +122,13 @@ pub const FileSystem = struct {
 
     raw: c.FATFS,
 
-    pub fn mount(self: *Self, drive: Path, force_mount: bool) !void {
-        try tryFs(api.mount(&self.raw, drive.ptr, @boolToInt(force_mount)));
+    pub const MountError = ErrorSet(&.{ FR_INVALID_DRIVE, FR_DISK_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM });
+    pub fn mount(self: *Self, drive: Path, force_mount: bool) MountError.Error!void {
+        try MountError.throw(api.mount(&self.raw, drive.ptr, @boolToInt(force_mount)));
     }
 
-    pub fn unmount(drive: Path) !void {
-        try tryFs(api.unmount(drive.ptr));
+    pub fn unmount(drive: Path) MountError.Error!void {
+        try MountError.throw(api.unmount(drive.ptr));
     }
 };
 
@@ -126,29 +137,33 @@ pub const Dir = struct {
 
     raw: c.DIR,
 
-    pub fn open(path: Path) !Self {
+    pub const OpenDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_OBJECT, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+
+    pub fn open(path: Path) OpenDirError.Error!Self {
         var dir = Self{ .raw = undefined };
-        try tryFs(api.opendir(&dir.raw, path.ptr));
+        try OpenDirError.throw(api.opendir(&dir.raw, path.ptr));
         return dir;
     }
 
     pub fn close(dir: *Self) void {
-        tryFs(api.closedir(&dir.raw)) catch |e| {
+        mapGenericError(api.closedir(&dir.raw)) catch |e| {
             logger.err("failed to close directory: {s}", .{@errorName(e)});
         };
         dir.* = undefined;
     }
 
-    pub fn next(dir: *Self) !?FileInfo {
+    pub const ReadDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+
+    pub fn next(dir: *Self) ReadDirError.Error!?FileInfo {
         var res: c.FILINFO = undefined;
-        try tryFs(api.readdir(&dir.raw, &res));
+        try ReadDirError.throw(api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
         return FileInfo.fromFILINFO(res);
     }
 
-    pub fn rewind(dir: *Self) !void {
-        try tryFs(api.f_readdir(&dir.raw, null));
+    pub fn rewind(dir: *Self) ReadDirError.Error!void {
+        try ReadDirError.throw(api.readdir(&dir.raw, null));
     }
 };
 
@@ -272,17 +287,19 @@ pub const File = struct {
         mode: Mode = .open_existing,
     };
 
-    pub fn open(path: Path, flags: OpenFlags) !Self {
+    pub const OpenError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_INVALID_OBJECT, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+
+    pub fn open(path: Path, flags: OpenFlags) OpenError.Error!Self {
         const int_flags = @enumToInt(flags.mode) | @enumToInt(flags.access);
 
         var file = Self{ .raw = undefined };
-        try tryFs(api.open(&file.raw, path.ptr, int_flags));
+        try OpenError.throw(api.open(&file.raw, path.ptr, int_flags));
         return file;
     }
 
     /// Creates a new file. If the file is existing, it will be truncated and overwritten.
     /// File access is read and write.
-    pub fn create(path: Path) !Self {
+    pub fn create(path: Path) OpenError.Error!Self {
         return open(path, .{
             .mode = .create_always,
             .access = .read_write,
@@ -291,7 +308,7 @@ pub const File = struct {
 
     /// Opens a file. The function fails if the file is not existing.
     /// File access is read only.
-    pub fn openRead(path: Path) !Self {
+    pub fn openRead(path: Path) OpenError.Error!Self {
         return open(path, .{
             .mode = .open_existing,
             .access = .read_only,
@@ -300,7 +317,7 @@ pub const File = struct {
 
     /// Opens the file if it is existing. If not, a new file will be created.
     /// File access is read and write.
-    pub fn openWrite(path: Path) !Self {
+    pub fn openWrite(path: Path) OpenError.Error!Self {
         return open(path, .{
             .mode = .open_always,
             .access = .read_write,
@@ -308,26 +325,30 @@ pub const File = struct {
     }
 
     pub fn close(file: *Self) void {
-        tryFs(api.close(&file.raw)) catch |e| {
+        mapGenericError(api.close(&file.raw)) catch |e| {
             logger.err("failed to close file: {s}", .{@errorName(e)});
         };
         file.* = undefined;
     }
 
-    pub fn sync(file: *Self) !void {
-        try tryFs(api.sync(&file.raw));
+    pub const SyncError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub fn sync(file: *Self) SyncError.Error!void {
+        try SyncError.throw(api.sync(&file.raw));
     }
 
-    pub fn truncate(file: *Self) !void {
-        try tryFs(api.truncate(&file.raw));
+    pub const TruncateError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub fn truncate(file: *Self) TruncateError.Error!void {
+        try TruncateError.throw(api.truncate(&file.raw));
     }
 
+    pub const SeekToError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
     pub fn seekTo(file: *Self, offset: FileSize) !void {
-        try tryFs(api.lseek(&file.raw, offset));
+        try SeekToError.throw(api.lseek(&file.raw, offset));
     }
 
+    pub const ExpandError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_DENIED, FR_TIMEOUT });
     pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
-        try tryFs(api.expand(&file.raw, new_size, @boolToInt(force_allocate)));
+        try ExpandError.throw(api.expand(&file.raw, new_size, @boolToInt(force_allocate)));
     }
 
     // pub fn forward(self: *Self, streamer: fn([*]const u8,
@@ -352,26 +373,26 @@ pub const File = struct {
         try self.seekTo(0);
     }
 
-    pub const WriteError = error{Overflow} || Error;
-    pub fn write(file: *Self, data: []const u8) WriteError!usize {
+    pub const WriteError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub fn write(file: *Self, data: []const u8) WriteError.Error!usize {
         var written: c_uint = 0;
-        try tryFs(api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
+        try WriteError.throw(api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
-    pub const ReadError = error{Overflow} || Error;
-    pub fn read(file: *Self, data: []u8) ReadError!usize {
+    pub const ReadError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub fn read(file: *Self, data: []u8) ReadError.Error!usize {
         var written: c_uint = 0;
-        try tryFs(api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
+        try ReadError.throw(api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
-    pub const Reader = std.io.Reader(*Self, ReadError, read);
+    pub const Reader = std.io.Reader(*Self, ReadError.Error, read);
     pub fn reader(file: *Self) Reader {
         return Reader{ .context = file };
     }
 
-    pub const Writer = std.io.Writer(*Self, WriteError, write);
+    pub const Writer = std.io.Writer(*Self, WriteError.Error, write);
     pub fn writer(file: *Self) Writer {
         return Writer{ .context = file };
     }
@@ -595,54 +616,6 @@ export fn disk_ioctl(
     return Disk.mapResult(disk.ioctl(@intToEnum(IoCtl, cmd), buff));
 }
 
-pub const Error = error{
-    DiskErr,
-    IntErr,
-    NotReady,
-    NoFile,
-    NoPath,
-    InvalidName,
-    Denied,
-    Exist,
-    InvalidObject,
-    WriteProtected,
-    InvalidDrive,
-    NotEnabled,
-    NoFilesystem,
-    MkfsAborted,
-    Timeout,
-    Locked,
-    NotEnoughCore,
-    TooManyOpenFiles,
-    InvalidParameter,
-};
-
-pub fn tryFs(code: c.FRESULT) Error!void {
-    return switch (code) {
-        c.FR_OK => {},
-        c.FR_DISK_ERR => error.DiskErr,
-        c.FR_INT_ERR => error.IntErr,
-        c.FR_NOT_READY => error.NotReady,
-        c.FR_NO_FILE => error.NoFile,
-        c.FR_NO_PATH => error.NoPath,
-        c.FR_INVALID_NAME => error.InvalidName,
-        c.FR_DENIED => error.Denied,
-        c.FR_EXIST => error.Exist,
-        c.FR_INVALID_OBJECT => error.InvalidObject,
-        c.FR_WRITE_PROTECTED => error.WriteProtected,
-        c.FR_INVALID_DRIVE => error.InvalidDrive,
-        c.FR_NOT_ENABLED => error.NotEnabled,
-        c.FR_NO_FILESYSTEM => error.NoFilesystem,
-        c.FR_MKFS_ABORTED => error.MkfsAborted,
-        c.FR_TIMEOUT => error.Timeout,
-        c.FR_LOCKED => error.Locked,
-        c.FR_NOT_ENOUGH_CORE => error.NotEnoughCore,
-        c.FR_TOO_MANY_OPEN_FILES => error.TooManyOpenFiles,
-        c.FR_INVALID_PARAMETER => error.InvalidParameter,
-        else => unreachable,
-    };
-}
-
 pub const IoCtl = enum(u8) {
     /// Complete pending write process (needed at FF_FS_READONLY == 0).
     ///
@@ -685,3 +658,98 @@ pub const IoCtl = enum(u8) {
 
     _,
 };
+
+pub const GlobalError = error{
+    DiskErr,
+    IntErr,
+    NotReady,
+    NoFile,
+    NoPath,
+    InvalidName,
+    Denied,
+    Exist,
+    InvalidObject,
+    WriteProtected,
+    InvalidDrive,
+    NotEnabled,
+    NoFilesystem,
+    MkfsAborted,
+    Timeout,
+    Locked,
+    OutOfMemory,
+    TooManyOpenFiles,
+    InvalidParameter,
+};
+
+const FR_DISK_ERR = error.DiskErr;
+const FR_INT_ERR = error.IntErr;
+const FR_NOT_READY = error.NotReady;
+const FR_NO_FILE = error.NoFile;
+const FR_NO_PATH = error.NoPath;
+const FR_INVALID_NAME = error.InvalidName;
+const FR_DENIED = error.Denied;
+const FR_EXIST = error.Exist;
+const FR_INVALID_OBJECT = error.InvalidObject;
+const FR_WRITE_PROTECTED = error.WriteProtected;
+const FR_INVALID_DRIVE = error.InvalidDrive;
+const FR_NOT_ENABLED = error.NotEnabled;
+const FR_NO_FILESYSTEM = error.NoFilesystem;
+const FR_MKFS_ABORTED = error.MkfsAborted;
+const FR_TIMEOUT = error.Timeout;
+const FR_LOCKED = error.Locked;
+const FR_NOT_ENOUGH_CORE = error.OutOfMemory;
+const FR_TOO_MANY_OPEN_FILES = error.TooManyOpenFiles;
+const FR_INVALID_PARAMETER = error.InvalidParameter;
+
+fn ErrorSet(comptime options: []const anyerror) type {
+    return struct {
+        pub const Error: type = @Type(.{
+            .ErrorSet = blk: {
+                var names: [options.len]std.builtin.Type.Error = undefined;
+                for (&names, options) |*name, err| {
+                    name.* = .{ .name = @errorName(err) };
+                }
+                break :blk &names;
+            },
+        });
+
+        pub fn throw(error_code: c.FRESULT) Error!void {
+            const mapped_error = if (mapGenericError(error_code)) |_| {
+                return;
+            } else |err| err;
+
+            inline for (options) |error_option| {
+                if (mapped_error == error_option)
+                    return error_option; // must return the comptime known value for inference
+            }
+
+            std.debug.panic("unexpected error: {s}", .{@errorName(mapped_error)});
+        }
+    };
+}
+
+pub fn mapGenericError(code: c.FRESULT) GlobalError!void {
+    return switch (code) {
+        c.FR_OK => {},
+        c.FR_DISK_ERR => error.DiskErr,
+        c.FR_INT_ERR => error.IntErr,
+        c.FR_NOT_READY => error.NotReady,
+        c.FR_NO_FILE => error.NoFile,
+        c.FR_NO_PATH => error.NoPath,
+        c.FR_INVALID_NAME => error.InvalidName,
+        c.FR_DENIED => error.Denied,
+        c.FR_EXIST => error.Exist,
+        c.FR_INVALID_OBJECT => error.InvalidObject,
+        c.FR_WRITE_PROTECTED => error.WriteProtected,
+        c.FR_INVALID_DRIVE => error.InvalidDrive,
+        c.FR_NOT_ENABLED => error.NotEnabled,
+        c.FR_NO_FILESYSTEM => error.NoFilesystem,
+        c.FR_MKFS_ABORTED => error.MkfsAborted,
+        c.FR_TIMEOUT => error.Timeout,
+        c.FR_LOCKED => error.Locked,
+        c.FR_NOT_ENOUGH_CORE => error.OutOfMemory,
+        c.FR_TOO_MANY_OPEN_FILES => error.TooManyOpenFiles,
+        c.FR_INVALID_PARAMETER => error.InvalidParameter,
+        else => unreachable,
+    };
+}
