@@ -108,13 +108,13 @@ pub const FormatOptions = struct {
 pub const MkfsError = ErrorSet(&.{ FR_DISK_ERR, FR_NOT_READY, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_MKFS_ABORTED, FR_INVALID_PARAMETER, FR_NOT_ENOUGH_CORE });
 pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError.Error!void {
     const opts = c.MKFS_PARM{
-        .fmt = @enumToInt(options.filesystem) | if (!options.use_partitions) @intCast(u8, c.FM_SFD) else 0,
-        .n_fat = @enumToInt(options.fats),
+        .fmt = @intFromEnum(options.filesystem) | if (!options.use_partitions) @as(u8, @intCast(c.FM_SFD)) else 0,
+        .n_fat = @intFromEnum(options.fats),
         .@"align" = options.sector_align,
         .au_size = options.cluster_size,
         .n_root = options.rootdir_size,
     };
-    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @intCast(c_uint, std.math.min(workspace.len, std.math.maxInt(c_uint)))));
+    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @as(c_uint, @intCast(std.math.min(workspace.len, std.math.maxInt(c_uint))))));
 }
 
 pub const FileSystem = struct {
@@ -124,7 +124,7 @@ pub const FileSystem = struct {
 
     pub const MountError = ErrorSet(&.{ FR_INVALID_DRIVE, FR_DISK_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM });
     pub fn mount(self: *Self, drive: Path, force_mount: bool) MountError.Error!void {
-        try MountError.throw(api.mount(&self.raw, drive.ptr, @boolToInt(force_mount)));
+        try MountError.throw(api.mount(&self.raw, drive.ptr, @intFromBool(force_mount)));
     }
 
     pub fn unmount(drive: Path) MountError.Error!void {
@@ -223,8 +223,8 @@ pub const Date = struct {
     pub fn fromFDate(val: u16) Date {
         return Date{
             .year = 1980 + (val >> 9),
-            .month = @intToEnum(std.time.epoch.Month, @truncate(u4, (val >> 5) & 0x0F)),
-            .day = @truncate(u8, (val >> 0) & 0x15),
+            .month = @as(std.time.epoch.Month, @enumFromInt(@as(u4, @truncate((val >> 5) & 0x0F)))),
+            .day = @as(u8, @truncate((val >> 0) & 0x15)),
         };
     }
 
@@ -233,7 +233,7 @@ pub const Date = struct {
         _ = opt;
         try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
             date.year,
-            @enumToInt(date.month),
+            @intFromEnum(date.month),
             date.day,
         });
     }
@@ -246,9 +246,9 @@ pub const Time = struct {
 
     pub fn fromFTime(val: u16) Time {
         return Time{
-            .hour = @truncate(u8, (val >> 11)),
-            .minute = @truncate(u8, (val >> 5) & 0x3F),
-            .second = 2 * @truncate(u8, (val >> 0) & 0x1F),
+            .hour = @as(u8, @truncate((val >> 11))),
+            .minute = @as(u8, @truncate((val >> 5) & 0x3F)),
+            .second = 2 * @as(u8, @truncate((val >> 0) & 0x1F)),
         };
     }
 
@@ -290,7 +290,7 @@ pub const File = struct {
     pub const OpenError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_INVALID_OBJECT, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
 
     pub fn open(path: Path, flags: OpenFlags) OpenError.Error!Self {
-        const int_flags = @enumToInt(flags.mode) | @enumToInt(flags.access);
+        const int_flags = @intFromEnum(flags.mode) | @intFromEnum(flags.access);
 
         var file = Self{ .raw = undefined };
         try OpenError.throw(api.open(&file.raw, path.ptr, int_flags));
@@ -348,7 +348,7 @@ pub const File = struct {
 
     pub const ExpandError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_DENIED, FR_TIMEOUT });
     pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
-        try ExpandError.throw(api.expand(&file.raw, new_size, @boolToInt(force_allocate)));
+        try ExpandError.throw(api.expand(&file.raw, new_size, @intFromBool(force_allocate)));
     }
 
     // pub fn forward(self: *Self, streamer: fn([*]const u8,
@@ -452,9 +452,9 @@ pub const Disk = struct {
 
         fn toInteger(self: @This()) c.DSTATUS {
             var i: c.DSTATUS = 0;
-            if (!self.initialized) i |= @intCast(u8, c.STA_NOINIT);
-            if (!self.disk_present) i |= @intCast(u8, c.STA_NODISK);
-            if (self.write_protected) i |= @intCast(u8, c.STA_PROTECT);
+            if (!self.initialized) i |= @as(u8, @intCast(c.STA_NOINIT));
+            if (!self.disk_present) i |= @as(u8, @intCast(c.STA_NODISK));
+            if (self.write_protected) i |= @as(u8, @intCast(c.STA_PROTECT));
             return i;
         }
     };
@@ -527,7 +527,7 @@ const RtcExport = struct {
         const timestamp = std.time.timestamp() - std.time.epoch.dos;
 
         const epoch_secs = std.time.epoch.EpochSeconds{
-            .secs = @intCast(u64, timestamp),
+            .secs = @as(u64, @intCast(timestamp)),
         };
 
         const epoch_day = epoch_secs.getEpochDay();
@@ -537,7 +537,7 @@ const RtcExport = struct {
         const month_and_day = year_and_day.calculateMonthDay();
 
         const year: u32 = year_and_day.year;
-        const month: u32 = @enumToInt(month_and_day.month);
+        const month: u32 = @intFromEnum(month_and_day.month);
         const day: u32 = month_and_day.day_index + 1;
 
         const hour: u32 = day_secs.getHoursIntoDay();
@@ -613,7 +613,7 @@ export fn disk_ioctl(
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
     logger.debug("disk.ioctl({}, {}, {*})", .{ pdrv, cmd, buff });
-    return Disk.mapResult(disk.ioctl(@intToEnum(IoCtl, cmd), buff));
+    return Disk.mapResult(disk.ioctl(@as(IoCtl, @enumFromInt(cmd)), buff));
 }
 
 pub const IoCtl = enum(u8) {
@@ -623,20 +623,20 @@ pub const IoCtl = enum(u8) {
     /// storage device has a write-back cache, the dirty cache data must be committed to the medium
     /// immediately. Nothing to do for this command if each write operation to the medium is
     /// completed in the disk_write function.
-    sync = @intCast(u8, c.CTRL_SYNC),
+    sync = @as(u8, @intCast(c.CTRL_SYNC)),
 
     /// Get media size (needed at FF_USE_MKFS == 1)
     /// Retrieves number of available sectors, the largest allowable LBA + 1, on the drive into the
     /// LBA_t variable that pointed by buff. This command is used by f_mkfs and f_fdisk function to
     /// determine the size of volume/partition to be created. It is required when FF_USE_MKFS == 1.
-    get_sector_count = @intCast(u8, c.GET_SECTOR_COUNT),
+    get_sector_count = @as(u8, @intCast(c.GET_SECTOR_COUNT)),
 
     /// Get sector size (needed at FF_MAX_SS != FF_MIN_SS)
     /// Retrieves sector size, minimum data unit for generic read/write, into the WORD variable that
     /// pointed by buff. Valid sector sizes are 512, 1024, 2048 and 4096. This command is required
     /// only if FF_MAX_SS > FF_MIN_SS. When FF_MAX_SS == FF_MIN_SS, this command will be never used
     /// and the read/write function must work in FF_MAX_SS bytes/sector.
-    get_sector_size = @intCast(u8, c.GET_SECTOR_SIZE),
+    get_sector_size = @as(u8, @intCast(c.GET_SECTOR_SIZE)),
 
     /// Get erase block size (needed at FF_USE_MKFS == 1)
     /// Retrieves erase block size in unit of sector of the flash memory media into the DWORD variable
@@ -645,7 +645,7 @@ pub const IoCtl = enum(u8) {
     /// to align data area on the suggested block boundary. It is required when FF_USE_MKFS == 1.
     /// Note that FatFs does not have FTL (flash translation layer). Either disk I/O layter or storage
     /// device must have an FTL in it.
-    get_block_size = @intCast(u8, c.GET_BLOCK_SIZE),
+    get_block_size = @as(u8, @intCast(c.GET_BLOCK_SIZE)),
 
     /// Inform device that the data on the block of sectors is no longer used (needed at FF_USE_TRIM == 1)
     /// Informs the disk I/O layter or the storage device that the data on the block of sectors is no longer
@@ -654,7 +654,7 @@ pub const IoCtl = enum(u8) {
     /// command if this funcion is not supported or not a flash memory device. FatFs does not check the result
     /// code and the file function is not affected even if the sector block was not erased well. This command
     /// is called on remove a cluster chain and in the f_mkfs function. It is required when FF_USE_TRIM == 1.
-    trim = @intCast(u8, c.CTRL_TRIM),
+    trim = @as(u8, @intCast(c.CTRL_TRIM)),
 
     _,
 };
