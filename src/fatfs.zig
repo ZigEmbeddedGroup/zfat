@@ -114,7 +114,7 @@ pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError.Error
         .au_size = options.cluster_size,
         .n_root = options.rootdir_size,
     };
-    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @as(c_uint, @intCast(std.math.min(workspace.len, std.math.maxInt(c_uint))))));
+    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @as(c_uint, @intCast(@min(workspace.len, std.math.maxInt(c_uint))))));
 }
 
 pub const FileSystem = struct {
