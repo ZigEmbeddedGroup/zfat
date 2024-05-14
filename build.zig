@@ -39,7 +39,7 @@ pub fn createModule(b: *std.Build, config: Config) *std.Build.Module {
 
     const config_module = options.createModule();
 
-    const fatfs_module = b.createModule(.{
+    const fatfs_module = b.addModule("fatfs", .{
         .root_source_file = b.path("src/fatfs.zig"),
     });
 
@@ -50,16 +50,11 @@ pub fn createModule(b: *std.Build, config: Config) *std.Build.Module {
 }
 
 pub fn link(exe: *std.Build.Step.Compile, config: Config) void {
-    exe.addCSourceFiles(.{
-        .files = &.{
-            "src/fatfs/ff.c",
-            "src/fatfs/ffunicode.c",
-            "src/fatfs/ffsystem.c",
-        },
-        .flags =  &.{
-            "-std=c99"
-        }
-    });
+    exe.addCSourceFiles(.{ .files = &.{
+        "src/fatfs/ff.c",
+        "src/fatfs/ffunicode.c",
+        "src/fatfs/ffsystem.c",
+    }, .flags = &.{"-std=c99"} });
 
     // exe.linkLibC();
 
@@ -165,13 +160,11 @@ pub const Config = struct {
     use_trim: bool = false,
     tiny: bool = false,
     exfat: bool = false,
-    rtc: RtcConfig = .{
-        .static = .{
-            .day = 14,
-            .month = .may,
-            .year = 2024,
-        }
-    },
+    rtc: RtcConfig = .{ .static = .{
+        .day = 14,
+        .month = .may,
+        .year = 2024,
+    } },
     filesystem_trust: Trust = .trust_all,
     lock: u32 = 0,
     reentrant: bool = false,
