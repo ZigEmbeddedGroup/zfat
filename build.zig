@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -12,7 +12,7 @@ pub fn build(b: *std.build.Builder) void {
     });
 
     const config = Config{};
-    exe.addModule("zfat", createModule(b, config));
+    exe.root_module.addImport("zfat", createModule(b, config));
     link(exe, config);
 
     exe.linkLibC();
@@ -28,15 +28,7 @@ pub fn build(b: *std.build.Builder) void {
     run_step.dependOn(&run_cmd.step);
 }
 
-fn sdkRoot() []const u8 {
-    return std.fs.path.dirname(@src().file) orelse ".";
-}
-
-fn sdkPath(comptime rel: []const u8) std.Build.LazyPath {
-    return .{ .cwd_relative = comptime sdkRoot() ++ rel };
-}
-
-pub fn createModule(b: *std.build.Builder, config: Config) *std.build.Module {
+pub fn createModule(b: *std.Build, config: Config) *std.Build.Module {
     const options = b.addOptions();
 
     options.addOption(bool, "has_rtc", (config.rtc != .static));
@@ -45,21 +37,30 @@ pub fn createModule(b: *std.build.Builder, config: Config) *std.build.Module {
     //     options.addOption(fld.field_type, fld.name, @field(config, fld.name));
     // }
 
-    return b.createModule(.{
-        .source_file = sdkPath("/src/fatfs.zig"),
-        .dependencies = &.{
-            .{ .name = "config", .module = options.createModule() },
-        },
+    const config_module = options.createModule();
+
+    const fatfs_module = b.createModule(.{
+        .root_source_file = b.path("src/fatfs.zig"),
     });
+
+    fatfs_module.addSystemIncludePath(b.path("src/fatfs"));
+    fatfs_module.addImport("config", config_module);
+
+    return fatfs_module;
 }
 
-pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
-    exe.addCSourceFiles(&.{
-        sdkPath("/src/fatfs/ff.c").cwd_relative,
-        sdkPath("/src/fatfs/ffunicode.c").cwd_relative,
-        sdkPath("/src/fatfs/ffsystem.c").cwd_relative,
-    }, &.{"-std=c99"});
-    exe.addIncludePath(sdkPath("/src/fatfs"));
+pub fn link(exe: *std.Build.Step.Compile, config: Config) void {
+    exe.addCSourceFiles(.{
+        .files = &.{
+            "src/fatfs/ff.c",
+            "src/fatfs/ffunicode.c",
+            "src/fatfs/ffsystem.c",
+        },
+        .flags =  &.{
+            "-std=c99"
+        }
+    });
+
     // exe.linkLibC();
 
     inline for (comptime std.meta.fields(Config)) |fld| {
@@ -111,7 +112,7 @@ pub fn link(exe: *std.build.LibExeObjStep, config: Config) void {
     }
 }
 
-fn addConfigField(exe: *std.build.LibExeObjStep, config: Config, comptime field_name: []const u8) void {
+fn addConfigField(exe: *std.Build.Step.Compile, config: Config, comptime field_name: []const u8) void {
     const value = @field(config, field_name);
     const Type = @TypeOf(value);
     const type_info = @typeInfo(Type);
@@ -164,7 +165,13 @@ pub const Config = struct {
     use_trim: bool = false,
     tiny: bool = false,
     exfat: bool = false,
-    rtc: RtcConfig = .dynamic,
+    rtc: RtcConfig = .{
+        .static = .{
+            .day = 14,
+            .month = .may,
+            .year = 2024,
+        }
+    },
     filesystem_trust: Trust = .trust_all,
     lock: u32 = 0,
     reentrant: bool = false,

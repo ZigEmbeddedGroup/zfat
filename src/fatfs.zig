@@ -1,6 +1,10 @@
 const std = @import("std");
 const config = @import("config");
 const c = @cImport({
+    // TODO: Get this from build system, as intended
+    @cDefine("FF_MAX_SS", "512");
+    @cDefine("FF_VOLUMES", "1");
+    // --------------------------
     @cInclude("ff.h");
     @cInclude("diskio.h");
 });
