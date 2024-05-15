@@ -10,12 +10,77 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.linkLibC();
 
     const config = Config{};
-    exe.root_module.addImport("zfat", createModule(b, config));
-    link(exe, config);
 
-    exe.linkLibC();
+    const fatfs_module = createModule(b, config);
+    exe.root_module.addImport("zfat", fatfs_module);
+
+    const ff = b.addStaticLibrary(.{
+        .name = "fatfs-c",
+        .target = target,
+        .optimize = optimize,
+    });
+
+    ff.addCSourceFiles(.{ .files = &.{
+        "src/fatfs/ff.c",
+        "src/fatfs/ffunicode.c",
+        "src/fatfs/ffsystem.c",
+    }, .flags = &.{"-std=c99"} });
+
+    ff.addSystemIncludePath(std.Build.LazyPath{.cwd_relative = "/usr/include/newlib"});
+
+    inline for (comptime std.meta.fields(Config)) |fld| {
+        addConfigField(ff, config, fld.name);
+    }
+
+    switch (config.volumes) {
+        .count => |count| {
+            ff.defineCMacro("FF_VOLUMES", ff.step.owner.fmt("{d}", .{count}));
+            ff.defineCMacro("FF_STR_VOLUME_ID", "0");
+        },
+        .named => |strings| {
+            var list = std.ArrayList(u8).init(ff.step.owner.allocator);
+            for (strings) |name| {
+                if (list.items.len > 0) {
+                    list.appendSlice(", ") catch @panic("out of memory");
+                }
+                list.writer().print("\"{}\"", .{
+                    std.fmt.fmtSliceHexUpper(name),
+                }) catch @panic("out of memory");
+            }
+
+            ff.defineCMacro("FF_VOLUMES", ff.step.owner.fmt("{d}", .{strings.len}));
+            ff.defineCMacro("FF_STR_VOLUME_ID", "1");
+            ff.defineCMacro("FF_VOLUME_STRS", list.items);
+        },
+    }
+
+    switch (config.sector_size) {
+        .static => |size| {
+            const str = ff.step.owner.fmt("{d}", .{@intFromEnum(size)});
+            ff.defineCMacro("FF_MIN_SS", str);
+            ff.defineCMacro("FF_MAX_SS", str);
+        },
+        .dynamic => |range| {
+            ff.defineCMacro("FF_MIN_SS", ff.step.owner.fmt("{d}", .{@intFromEnum(range.minimum)}));
+            ff.defineCMacro("FF_MAX_SS", ff.step.owner.fmt("{d}", .{@intFromEnum(range.maximum)}));
+        },
+    }
+
+    switch (config.rtc) {
+        .dynamic => ff.defineCMacro("FF_FS_NORTC", "0"),
+        .static => |date| {
+            ff.defineCMacro("FF_FS_NORTC", "1");
+            ff.defineCMacro("FF_NORTC_MON", ff.step.owner.fmt("{d}", .{date.month.numeric()}));
+            ff.defineCMacro("FF_NORTC_MDAY", ff.step.owner.fmt("{d}", .{date.day}));
+            ff.defineCMacro("FF_NORTC_YEAR", ff.step.owner.fmt("{d}", .{date.year}));
+        },
+    }
+
+    fatfs_module.linkLibrary(ff);
+
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -47,64 +112,6 @@ pub fn createModule(b: *std.Build, config: Config) *std.Build.Module {
     fatfs_module.addImport("config", config_module);
 
     return fatfs_module;
-}
-
-pub fn link(exe: *std.Build.Step.Compile, config: Config) void {
-    exe.addCSourceFiles(.{ .files = &.{
-        "src/fatfs/ff.c",
-        "src/fatfs/ffunicode.c",
-        "src/fatfs/ffsystem.c",
-    }, .flags = &.{"-std=c99"} });
-
-    // exe.linkLibC();
-
-    inline for (comptime std.meta.fields(Config)) |fld| {
-        addConfigField(exe, config, fld.name);
-    }
-
-    switch (config.volumes) {
-        .count => |count| {
-            exe.defineCMacro("FF_VOLUMES", exe.step.owner.fmt("{d}", .{count}));
-            exe.defineCMacro("FF_STR_VOLUME_ID", "0");
-        },
-        .named => |strings| {
-            var list = std.ArrayList(u8).init(exe.step.owner.allocator);
-            for (strings) |name| {
-                if (list.items.len > 0) {
-                    list.appendSlice(", ") catch @panic("out of memory");
-                }
-                list.writer().print("\"{}\"", .{
-                    std.fmt.fmtSliceHexUpper(name),
-                }) catch @panic("out of memory");
-            }
-
-            exe.defineCMacro("FF_VOLUMES", exe.step.owner.fmt("{d}", .{strings.len}));
-            exe.defineCMacro("FF_STR_VOLUME_ID", "1");
-            exe.defineCMacro("FF_VOLUME_STRS", list.items);
-        },
-    }
-
-    switch (config.sector_size) {
-        .static => |size| {
-            const str = exe.step.owner.fmt("{d}", .{@intFromEnum(size)});
-            exe.defineCMacro("FF_MIN_SS", str);
-            exe.defineCMacro("FF_MAX_SS", str);
-        },
-        .dynamic => |range| {
-            exe.defineCMacro("FF_MIN_SS", exe.step.owner.fmt("{d}", .{@intFromEnum(range.minimum)}));
-            exe.defineCMacro("FF_MAX_SS", exe.step.owner.fmt("{d}", .{@intFromEnum(range.maximum)}));
-        },
-    }
-
-    switch (config.rtc) {
-        .dynamic => exe.defineCMacro("FF_FS_NORTC", "0"),
-        .static => |date| {
-            exe.defineCMacro("FF_FS_NORTC", "1");
-            exe.defineCMacro("FF_NORTC_MON", exe.step.owner.fmt("{d}", .{date.month.numeric()}));
-            exe.defineCMacro("FF_NORTC_MDAY", exe.step.owner.fmt("{d}", .{date.day}));
-            exe.defineCMacro("FF_NORTC_YEAR", exe.step.owner.fmt("{d}", .{date.year}));
-        },
-    }
 }
 
 fn addConfigField(exe: *std.Build.Step.Compile, config: Config, comptime field_name: []const u8) void {
