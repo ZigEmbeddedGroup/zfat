@@ -2,9 +2,9 @@ name: Build
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
   push:
-    branches: [master]
+    branches: [main]
 
 jobs:
   build:
@@ -24,7 +24,8 @@ jobs:
 
       - name: Exercise Build options
         run: |
-          zig build -Dstatic-rpc=1234-08-31
+          zig build -Dstatic-rtc=1980-01-01
+          zig build -Dstatic-rtc=2107-01-01
           zig build -Dsector-size=512
           zig build -Dsector-size=1024
           zig build -Dsector-size=2028
