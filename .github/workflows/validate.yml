@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Basic Build
+        run: |
+          zig build
+
+      - name: Exercise Build options
+        run: |
+          zig build -Dstatic-rpc=1234-08-31
+          zig build -Dsector-size=512
+          zig build -Dsector-size=1024
+          zig build -Dsector-size=2028
+          zig build -Dsector-size=4096
+          zig build -Dsector-size=512:4096
+          zig build -Dsector-size=1024:4096
+          zig build -Dsector-size=2028:4096
+          zig build -Dvolume-count=1
+          zig build -Dvolume-count=2
+          zig build -Dvolume-count=31
+          zig build -Dvolume-names=C
+          zig build -Dvolume-names=C,D,E,F

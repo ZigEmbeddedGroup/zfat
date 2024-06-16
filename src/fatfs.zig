@@ -59,7 +59,7 @@ pub const FileSystem = struct {
     raw: c.FATFS,
 
     pub fn mount(self: *Self, drive: Path, force_mount: bool) !void {
-        try tryFs(api.mount(&self.raw, drive.ptr, @boolToInt(force_mount)));
+        try tryFs(api.mount(&self.raw, drive.ptr, @intFromBool(force_mount)));
     }
 
     pub fn unmount(drive: Path) !void {
@@ -123,7 +123,7 @@ pub const File = struct {
     };
 
     pub fn open(path: Path, flags: OpenFlags) !Self {
-        const int_flags = @enumToInt(flags.mode) | @enumToInt(flags.access);
+        const int_flags = @intFromEnum(flags.mode) | @intFromEnum(flags.access);
 
         var file = Self{ .raw = undefined };
         try tryFs(api.open(&file.raw, path.ptr, int_flags));
@@ -177,7 +177,7 @@ pub const File = struct {
     }
 
     pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
-        try tryFs(api.expand(&file.raw, new_size, @boolToInt(force_allocate)));
+        try tryFs(api.expand(&file.raw, new_size, @intFromBool(force_allocate)));
     }
 
     // pub fn forward(self: *Self, streamer: fn([*]const u8,
@@ -230,11 +230,11 @@ pub const File = struct {
 pub const Disk = struct {
     const Self = @This();
 
-    getStatusFn: fn (self: *Self) Status,
-    initializeFn: fn (self: *Self) Self.Error!Status,
-    readFn: fn (self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
-    writeFn: fn (self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
-    ioctlFn: fn (self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void,
+    getStatusFn: *const fn (self: *Self) Status,
+    initializeFn: *const fn (self: *Self) Self.Error!Status,
+    readFn: *const fn (self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
+    writeFn: *const fn (self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
+    ioctlFn: *const fn (self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void,
 
     pub fn getStatus(self: *Self) Status {
         return self.getStatusFn(self);
@@ -281,9 +281,9 @@ pub const Disk = struct {
 
         fn toInteger(self: @This()) c.DSTATUS {
             var i: c.DSTATUS = 0;
-            if (!self.initialized) i |= @intCast(u8, c.STA_NOINIT);
-            if (!self.disk_present) i |= @intCast(u8, c.STA_NODISK);
-            if (self.write_protected) i |= @intCast(u8, c.STA_PROTECT);
+            if (!self.initialized) i |= @as(u8, @intCast(c.STA_NOINIT));
+            if (!self.disk_present) i |= @as(u8, @intCast(c.STA_NODISK));
+            if (self.write_protected) i |= @as(u8, @intCast(c.STA_PROTECT));
             return i;
         }
     };
@@ -364,7 +364,7 @@ const RtcExport = struct {
         const timestamp = std.time.timestamp() - std.time.epoch.dos;
 
         const epoch_secs = std.time.epoch.EpochSeconds{
-            .secs = @intCast(u64, timestamp),
+            .secs = @intCast(timestamp),
         };
 
         const epoch_day = epoch_secs.getEpochDay();
@@ -374,7 +374,7 @@ const RtcExport = struct {
         const month_and_day = year_and_day.calculateMonthDay();
 
         const year: u32 = year_and_day.year;
-        const month: u32 = @enumToInt(month_and_day.month);
+        const month: u32 = @intFromEnum(month_and_day.month);
         const day: u32 = month_and_day.day_index + 1;
 
         const hour: u32 = day_secs.getHoursIntoDay();
@@ -450,7 +450,7 @@ export fn disk_ioctl(
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
     logger.info("disk.ioctl({}, {}, {*})", .{ pdrv, cmd, buff });
-    return Disk.mapResult(disk.ioctl(@intToEnum(IoCtl, cmd), buff));
+    return Disk.mapResult(disk.ioctl(@enumFromInt(cmd), buff));
 }
 
 pub const Error = error{
@@ -503,19 +503,19 @@ pub fn tryFs(code: c.FRESULT) Error!void {
 
 pub const IoCtl = enum(u8) {
     /// Complete pending write process (needed at FF_FS_READONLY == 0)
-    sync = @intCast(u8, c.CTRL_SYNC),
+    sync = @intCast(c.CTRL_SYNC),
 
     /// Get media size (needed at FF_USE_MKFS == 1)
-    get_sector_count = @intCast(u8, c.GET_SECTOR_COUNT),
+    get_sector_count = @intCast(c.GET_SECTOR_COUNT),
 
     /// Get sector size (needed at FF_MAX_SS != FF_MIN_SS)
-    get_sector_size = @intCast(u8, c.GET_SECTOR_SIZE),
+    get_sector_size = @intCast(c.GET_SECTOR_SIZE),
 
     /// Get erase block size (needed at FF_USE_MKFS == 1)
-    get_block_size = @intCast(u8, c.GET_BLOCK_SIZE),
+    get_block_size = @intCast(c.GET_BLOCK_SIZE),
 
     /// Inform device that the data on the block of sectors is no longer used (needed at FF_USE_TRIM == 1)
-    trim = @intCast(u8, c.CTRL_TRIM),
+    trim = @intCast(c.CTRL_TRIM),
 
     _,
 };

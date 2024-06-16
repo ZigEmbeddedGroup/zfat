@@ -71,7 +71,7 @@ pub const Disk = struct {
     }
 
     pub fn getStatus(interface: *fatfs.Disk) fatfs.Disk.Status {
-        const self = @fieldParentPtr(Disk, "interface", interface);
+        const self: *Disk = @fieldParentPtr("interface", interface);
         return fatfs.Disk.Status{
             .initialized = (self.backing_file != null),
             .disk_present = (self.backing_file != null),
@@ -80,7 +80,7 @@ pub const Disk = struct {
     }
 
     pub fn initialize(interface: *fatfs.Disk) fatfs.Disk.Error!fatfs.Disk.Status {
-        const self = @fieldParentPtr(Disk, "interface", interface);
+        const self: *Disk = @fieldParentPtr("interface", interface);
         if (self.backing_file != null) {
             return fatfs.Disk.Status{
                 .initialized = true,
@@ -97,7 +97,7 @@ pub const Disk = struct {
     }
 
     pub fn read(interface: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(Disk, "interface", interface);
+        const self: *Disk = @fieldParentPtr("interface", interface);
 
         std.log.info("read({*}, {}, {})", .{ buff, sector, count });
 
@@ -107,7 +107,7 @@ pub const Disk = struct {
     }
 
     pub fn write(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(Disk, "interface", interface);
+        const self: *Disk = @fieldParentPtr("interface", interface);
 
         std.log.info("write({*}, {}, {})", .{ buff, sector, count });
 
@@ -117,7 +117,7 @@ pub const Disk = struct {
     }
 
     pub fn ioctl(interface: *fatfs.Disk, cmd: fatfs.IoCtl, buff: [*]u8) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(Disk, "interface", interface);
+        const self: *Disk = @fieldParentPtr("interface", interface);
         if (self.backing_file) |file| {
             _ = buff;
             switch (cmd) {
