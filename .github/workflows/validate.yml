@@ -18,9 +18,9 @@ jobs:
         with:
           version: 0.13.0
 
-      - name: Basic Build
+      - name: Build Demo
         run: |
-          zig build
+          zig build -Dmkfs install demo
 
       - name: Exercise Build options
         run: |

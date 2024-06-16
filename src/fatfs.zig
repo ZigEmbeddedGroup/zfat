@@ -713,7 +713,7 @@ fn ErrorSet(comptime options: []const anyerror) type {
             },
         });
 
-        pub fn throw(error_code: c.FRESULT) Error!void {
+        pub inline fn throw(error_code: c.FRESULT) Error!void {
             const mapped_error = if (mapGenericError(error_code)) |_| {
                 return;
             } else |err| err;
@@ -728,7 +728,7 @@ fn ErrorSet(comptime options: []const anyerror) type {
     };
 }
 
-pub fn mapGenericError(code: c.FRESULT) GlobalError!void {
+pub inline fn mapGenericError(code: c.FRESULT) GlobalError!void {
     return switch (code) {
         c.FR_OK => {},
         c.FR_DISK_ERR => error.DiskErr,

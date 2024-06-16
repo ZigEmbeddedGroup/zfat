@@ -6,41 +6,31 @@ const fatfs = @import("zfat");
 var global_fs: fatfs.FileSystem = undefined;
 
 // requires pointer stability
-var image_disk: Disk = .{};
+var image_disk: Disk = undefined;
 
 pub fn main() !u8 {
-    const args = try std.process.argsAlloc(std.heap.page_allocator);
-    defer std.process.argsFree(std.heap.page_allocator, args);
-
-    if (args.len != 2) {
-        std.log.err("requires source file!", .{});
-        return 1;
-    }
-
-    var source_file = std.fs.cwd().openFile(args[1], .{}) catch |e| {
-        std.log.err("failed to open firmware {s}: {s}", .{ args[1], @errorName(e) });
-        return 1;
+    image_disk = Disk{
+        .sectors = try std.heap.page_allocator.alloc([Disk.sector_size]u8, 100_000), // ~40 MB
     };
-    defer source_file.close();
-
-    image_disk.open("/dev/sdb1") catch |e| {
-        std.log.err("failed to open disk /dev/sdb1: {s}", .{@errorName(e)});
-        return 1;
-    };
-    defer image_disk.close();
+    defer std.heap.page_allocator.free(image_disk.sectors);
 
     fatfs.disks[0] = &image_disk.interface;
+
+    var workspace: [4096]u8 = undefined;
+    try fatfs.mkfs("0:", .{
+        .filesystem = .fat32,
+        .sector_align = 1,
+        .use_partitions = true,
+    }, &workspace);
 
     try global_fs.mount("0:", true);
     defer fatfs.FileSystem.unmount("0:") catch |e| std.log.err("failed to unmount filesystem: {s}", .{@errorName(e)});
 
     {
-        var fifo = std.fifo.LinearFifo(u8, .{ .Static = 8192 }).init();
-
         var file = try fatfs.File.create("0:/firmware.uf2");
         defer file.close();
 
-        try fifo.pump(source_file.reader(), file.writer());
+        try file.writer().writeAll("Hello, World!\r\n");
     }
 
     return 0;
@@ -56,44 +46,21 @@ pub const Disk = struct {
         .writeFn = write,
         .ioctlFn = ioctl,
     },
-    backing_file: ?std.fs.File = null,
-
-    fn open(self: *Disk, path: []const u8) !void {
-        self.close();
-        self.backing_file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
-    }
-
-    fn close(self: *Disk) void {
-        if (self.backing_file) |*file| {
-            file.close();
-            self.backing_file = null;
-        }
-    }
+    sectors: [][sector_size]u8,
 
     pub fn getStatus(interface: *fatfs.Disk) fatfs.Disk.Status {
         const self: *Disk = @fieldParentPtr("interface", interface);
+        _ = self;
         return fatfs.Disk.Status{
-            .initialized = (self.backing_file != null),
-            .disk_present = (self.backing_file != null),
+            .initialized = true,
+            .disk_present = true,
             .write_protected = false,
         };
     }
 
     pub fn initialize(interface: *fatfs.Disk) fatfs.Disk.Error!fatfs.Disk.Status {
         const self: *Disk = @fieldParentPtr("interface", interface);
-        if (self.backing_file != null) {
-            return fatfs.Disk.Status{
-                .initialized = true,
-                .disk_present = true,
-                .write_protected = false,
-            };
-        }
-        self.backing_file = std.fs.cwd().openFile("disk.img", .{ .mode = .read_write }) catch return error.DiskNotReady;
-        return fatfs.Disk.Status{
-            .initialized = (self.backing_file != null),
-            .disk_present = (self.backing_file != null),
-            .write_protected = false,
-        };
+        return getStatus(&self.interface);
     }
 
     pub fn read(interface: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
@@ -101,9 +68,9 @@ pub const Disk = struct {
 
         std.log.info("read({*}, {}, {})", .{ buff, sector, count });
 
-        var file = self.backing_file orelse return error.IoError;
-        file.seekTo(sector * sector_size) catch return error.IoError;
-        file.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
+        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
+        sectors.seekTo(sector * sector_size) catch return error.IoError;
+        sectors.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
     }
 
     pub fn write(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
@@ -111,24 +78,23 @@ pub const Disk = struct {
 
         std.log.info("write({*}, {}, {})", .{ buff, sector, count });
 
-        var file = self.backing_file orelse return error.IoError;
-        file.seekTo(sector * sector_size) catch return error.IoError;
-        file.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
+        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
+        sectors.seekTo(sector * sector_size) catch return error.IoError;
+        sectors.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
     }
 
     pub fn ioctl(interface: *fatfs.Disk, cmd: fatfs.IoCtl, buff: [*]u8) fatfs.Disk.Error!void {
         const self: *Disk = @fieldParentPtr("interface", interface);
-        if (self.backing_file) |file| {
-            _ = buff;
-            switch (cmd) {
-                .sync => {
-                    file.sync() catch return error.IoError;
-                },
 
-                else => return error.InvalidParameter,
-            }
-        } else {
-            return error.DiskNotReady;
+        switch (cmd) {
+            .sync => {},
+            .get_sector_count => {
+                @as(*align(1) fatfs.LBA, @ptrCast(buff)).* = @intCast(self.sectors.len);
+            },
+            else => {
+                std.log.err("invalid ioctl: {}", .{cmd});
+                return error.InvalidParameter;
+            },
         }
     }
 };

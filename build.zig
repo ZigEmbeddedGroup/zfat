@@ -6,6 +6,10 @@ fn bad_config(comptime fmt: []const u8, args: anytype) noreturn {
 }
 
 pub fn build(b: *std.Build) void {
+    // targets:
+
+    const demo_step = b.step("demo", "Builds the demo:");
+
     // options:
 
     const target = b.standardTargetOptions(.{});
@@ -166,7 +170,7 @@ pub fn build(b: *std.Build) void {
     // usage demo:
 
     const exe = b.addExecutable(.{
-        .name = "zfat",
+        .name = "zfat-demo",
         .root_source_file = b.path("demo/main.zig"),
         .target = target,
         .optimize = optimize,
@@ -174,8 +178,8 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addImport("zfat", zfat_mod);
 
-    // exe.linkLibC();
-    b.installArtifact(exe);
+    const demo_exe = b.addInstallArtifact(exe, .{});
+    demo_step.dependOn(&demo_exe.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
