@@ -28,13 +28,13 @@ jobs:
           zig build -Dstatic-rtc=2107-01-01
           zig build -Dsector-size=512
           zig build -Dsector-size=1024
-          zig build -Dsector-size=2028
+          zig build -Dsector-size=2048
           zig build -Dsector-size=4096
           zig build -Dsector-size=512:4096
           zig build -Dsector-size=1024:4096
-          zig build -Dsector-size=2028:4096
+          zig build -Dsector-size=2048:4096
           zig build -Dvolume-count=1
           zig build -Dvolume-count=2
-          zig build -Dvolume-count=31
+          zig build -Dvolume-count=10
           zig build -Dvolume-names=C
           zig build -Dvolume-names=C,D,E,F

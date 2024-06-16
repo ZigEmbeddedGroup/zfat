@@ -1,5 +1,10 @@
 const std = @import("std");
 
+fn bad_config(comptime fmt: []const u8, args: anytype) noreturn {
+    std.debug.print(fmt ++ "\n", args);
+    std.process.exit(1);
+}
+
 pub fn build(b: *std.Build) void {
     // options:
 
@@ -63,17 +68,16 @@ pub fn build(b: *std.Build) void {
                 };
             };
 
-            config.rtc = rtc_config orelse {
-                std.debug.print("Invalid time format. Expected YYYY-MM-DD!", .{});
-                std.process.exit(1);
-            };
+            config.rtc = rtc_config orelse bad_config(
+                "Invalid time format. Expected YYYY-MM-DD!",
+                .{},
+            );
         }
 
         const maybe_volume_count = b.option(u5, "volume-count", "Sets the total number of volumes. Mutually exclusive with -Dvolume-names");
         const maybe_volume_names = b.option([]const u8, "volume-names", "Sets the comma separated list of volume names. Mutually exclusive with -Dvolume-count");
         if ((maybe_volume_count != null) and (maybe_volume_names != null)) {
-            std.debug.print("-Dvolume-count and -Dvolume-names are mutually exclusive.", .{});
-            std.process.exit(1);
+            bad_config("-Dvolume-count and -Dvolume-names are mutually exclusive.", .{});
         }
 
         if (maybe_volume_count) |volume_count| {
@@ -98,22 +102,22 @@ pub fn build(b: *std.Build) void {
 
                 config.sector_size = .{
                     .dynamic = .{
-                        .minimum = std.meta.stringToEnum(SectorOption, min) orelse {
-                            std.debug.print("Invalid value for -Dsector-size!", .{});
-                            std.process.exit(1);
-                        },
-                        .maximum = std.meta.stringToEnum(SectorOption, max) orelse {
-                            std.debug.print("Invalid value for -Dsector-size!", .{});
-                            std.process.exit(1);
-                        },
+                        .minimum = std.meta.stringToEnum(SectorOption, min) orelse bad_config(
+                            "Invalid value for -Dsector-size: '{}'",
+                            .{std.zig.fmtEscapes(sector_config)},
+                        ),
+                        .maximum = std.meta.stringToEnum(SectorOption, max) orelse bad_config(
+                            "Invalid value for -Dsector-size: '{}'",
+                            .{std.zig.fmtEscapes(sector_config)},
+                        ),
                     },
                 };
             } else {
                 config.sector_size = .{
-                    .static = std.meta.stringToEnum(SectorOption, sector_config) orelse {
-                        std.debug.print("Invalid value for -Dsector-size!", .{});
-                        std.process.exit(1);
-                    },
+                    .static = std.meta.stringToEnum(SectorOption, sector_config) orelse bad_config(
+                        "Invalid value for -Dsector-size: '{}'",
+                        .{std.zig.fmtEscapes(sector_config)},
+                    ),
                 };
             }
         }
