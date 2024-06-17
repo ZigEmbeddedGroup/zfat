@@ -140,32 +140,17 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    zfat_lib.addIncludePath(b.path("src/fatfs"));
     zfat_lib.installHeader(b.path("src/fatfs/ff.h"), "ff.h");
     zfat_lib.installHeader(b.path("src/fatfs/diskio.h"), "diskio.h");
-    zfat_lib.addCSourceFiles(.{
-        .root = b.path("src/fatfs"),
-        .files = &.{
-            "ff.c",
-            "ffunicode.c",
-            "ffsystem.c",
-        },
-        .flags = &.{"-std=c99"},
-    });
-    zfat_lib.linkLibC();
-    apply_public_config(b, &zfat_lib.root_module, config);
-    apply_private_config(b, &zfat_lib.root_module, config);
+    initialize_mod(b, &zfat_lib.root_module, config);
 
     const zfat_mod = b.addModule("zfat", .{
         .root_source_file = b.path("src/fatfs.zig"),
         .target = target,
         .optimize = optimize,
     });
-    zfat_mod.linkLibrary(zfat_lib);
-    zfat_mod.addIncludePath(b.path("src/fatfs"));
+    initialize_mod(b, zfat_mod, config);
     zfat_mod.addOptions("config", mod_options);
-    zfat_mod.link_libc = true;
-    apply_public_config(b, zfat_mod, config);
 
     // usage demo:
 
@@ -189,6 +174,22 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+}
+
+fn initialize_mod(b: *std.Build, mod: *std.Build.Module, config: Config) void {
+    mod.addIncludePath(b.path("src/fatfs"));
+    mod.addCSourceFiles(.{
+        .root = b.path("src/fatfs"),
+        .files = &.{
+            "ff.c",
+            "ffunicode.c",
+            "ffsystem.c",
+        },
+        .flags = &.{"-std=c99"},
+    });
+    apply_public_config(b, mod, config);
+    apply_private_config(b, mod, config);
+    mod.link_libc = true;
 }
 
 fn apply_public_config(b: *std.Build, module: *std.Build.Module, config: Config) void {
