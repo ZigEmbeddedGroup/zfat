@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const link_libc = !(b.option(bool, "no-libc", "Prevents linking of libc by default") orelse false);
+
     const config = blk: {
         var config = Config{};
 
@@ -142,14 +144,14 @@ pub fn build(b: *std.Build) void {
     });
     zfat_lib.installHeader(b.path("src/fatfs/ff.h"), "ff.h");
     zfat_lib.installHeader(b.path("src/fatfs/diskio.h"), "diskio.h");
-    initialize_mod(b, &zfat_lib.root_module, config);
+    initialize_mod(b, &zfat_lib.root_module, config, link_libc);
 
     const zfat_mod = b.addModule("zfat", .{
         .root_source_file = b.path("src/fatfs.zig"),
         .target = target,
         .optimize = optimize,
     });
-    initialize_mod(b, zfat_mod, config);
+    initialize_mod(b, zfat_mod, config, link_libc);
     zfat_mod.addOptions("config", mod_options);
 
     // usage demo:
@@ -176,7 +178,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 }
 
-fn initialize_mod(b: *std.Build, mod: *std.Build.Module, config: Config) void {
+fn initialize_mod(b: *std.Build, mod: *std.Build.Module, config: Config, link_libc: bool) void {
     mod.addIncludePath(b.path("src/fatfs"));
     mod.addCSourceFiles(.{
         .root = b.path("src/fatfs"),
@@ -189,7 +191,7 @@ fn initialize_mod(b: *std.Build, mod: *std.Build.Module, config: Config) void {
     });
     apply_public_config(b, mod, config);
     apply_private_config(b, mod, config);
-    mod.link_libc = true;
+    mod.link_libc = link_libc;
 }
 
 fn apply_public_config(b: *std.Build, module: *std.Build.Module, config: Config) void {
