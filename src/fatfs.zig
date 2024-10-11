@@ -8,6 +8,8 @@ const logger = std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
+pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
+
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
 pub const FileSize = c.FSIZE_t;
@@ -22,12 +24,16 @@ pub fn mkdir(path: Path) MkDirError.Error!void {
 }
 
 pub const UnlinkError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+
 pub fn unlink(path: Path) UnlinkError.Error!void {
     try UnlinkError.throw(api.unlink(path.ptr));
 }
 
 pub const RenameError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
-pub fn rename(old_path: Path, new_path: Path) RenameError.Error!void {
+pub fn rename(
+    old_path: Path,
+    new_path: Path,
+) RenameError.Error!void {
     try RenameError.throw(api.rename(old_path.ptr, new_path.ptr));
 }
 
@@ -39,12 +45,37 @@ pub fn stat(path: Path) StatError.Error!FileInfo {
 }
 
 pub const ChmodError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn chmod(path: Path, attributes: u8, mask: u8) ChmodError.Error!void {
-    try ChmodError.throw(api.chmod(path.ptr, attributes, mask));
+pub const ChmodAttributes = struct {
+    read_only: ?bool = null,
+    hidden: ?bool = null,
+    system: ?bool = null,
+    archive: ?bool = null,
+};
+pub fn chmod(path: Path, attributes: ChmodAttributes) ChmodError.Error!void {
+    var mask: Attributes = @bitCast(@as(u8, 0));
+    var values: Attributes = @bitCast(@as(u8, 0));
+
+    inline for (.{
+        "read_only",
+        "hidden",
+        "system",
+        "archive",
+    }) |field| {
+        if (@field(attributes, field)) |value| {
+            @field(mask, field) = true;
+            @field(values, field) = value;
+        }
+    }
+
+    try ChmodError.throw(api.chmod(path.ptr, @bitCast(values), @bitCast(mask)));
 }
 
 pub const UTimeError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn utime(path: Path, file_info: c.FILINFO) UTimeError.Error!void {
+pub fn utime(path: Path, date: Date, time: Time) UTimeError.Error!void {
+    const file_info = std.mem.zeroInit(c.FILINFO, .{
+        .fdate = date.encode(),
+        .ftime = time.encode(),
+    });
     try UTimeError.throw(api.utime(path.ptr, &file_info));
 }
 
@@ -60,8 +91,8 @@ pub fn chdrive(path: Path) ChDriveError.Error!void {
 
 pub const GetCwdError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
 pub fn getcwd(buffer: []PathChar) GetCwdError.Error!Path {
-    try GetCwdError.throw(api.getcwd(buffer.ptr, try std.math.cast(c_uint, buffer.len)));
-    return std.mem.sliceTo(buffer, 0);
+    try GetCwdError.throw(api.getcwd(buffer.ptr, std.math.cast(c_uint, buffer.len) orelse std.math.maxInt(c_uint)));
+    return @ptrCast(std.mem.sliceTo(buffer, 0));
 }
 
 pub const DiskFormat = enum(u8) {
@@ -167,26 +198,68 @@ pub const Dir = struct {
     }
 };
 
-pub const Attributes = struct {
+pub const Attributes = packed struct(u8) {
     read_only: bool,
     hidden: bool,
     system: bool,
+    _padding0: bool = false,
+    directory: bool,
     archive: bool,
+    _padding1: bool = false,
+    _padding2: bool = false,
+
+    comptime {
+        std.debug.assert(c.AM_RDO == 0x01);
+        std.debug.assert(c.AM_HID == 0x02);
+        std.debug.assert(c.AM_SYS == 0x04);
+        std.debug.assert(c.AM_DIR == 0x10);
+        std.debug.assert(c.AM_ARC == 0x20);
+
+        std.debug.assert(@bitOffsetOf(Attributes, "read_only") == 0);
+        std.debug.assert(@bitOffsetOf(Attributes, "hidden") == 1);
+        std.debug.assert(@bitOffsetOf(Attributes, "system") == 2);
+        std.debug.assert(@bitOffsetOf(Attributes, "directory") == 4);
+        std.debug.assert(@bitOffsetOf(Attributes, "archive") == 5);
+    }
+
+    pub fn format(attrs: Attributes, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        var keys = std.BoundedArray([]const u8, 8){};
+        if (attrs.read_only) keys.appendAssumeCapacity("read_only");
+        if (attrs.hidden) keys.appendAssumeCapacity("hidden");
+        if (attrs.system) keys.appendAssumeCapacity("system");
+        if (attrs._padding0) keys.appendAssumeCapacity("BIT3");
+        if (attrs.directory) keys.appendAssumeCapacity("directory");
+        if (attrs.archive) keys.appendAssumeCapacity("archive");
+        if (attrs._padding1) keys.appendAssumeCapacity("BIT6");
+        if (attrs._padding2) keys.appendAssumeCapacity("BIT7");
+
+        try writer.print("{s}{{", .{@typeName(Attributes)});
+
+        if (keys.len > 0) {
+            try writer.writeAll(" ");
+            try writer.writeAll(keys.buffer[0]);
+            for (keys.slice()[1..]) |other| {
+                try writer.writeAll(", ");
+                try writer.writeAll(other);
+            }
+            try writer.writeAll(" ");
+        }
+
+        try writer.writeAll("}");
+    }
 };
 
 pub const FileInfo = struct {
     pub fn fromFILINFO(info: c.FILINFO) FileInfo {
         return FileInfo{
             .size = info.fsize,
-            .date = Date.fromFDate(info.fdate),
-            .time = Time.fromFTime(info.ftime),
+            .date = Date.decode(info.fdate),
+            .time = Time.decode(info.ftime),
             .kind = if ((info.fattrib & c.AM_DIR) != 0) .Directory else .File,
-            .attributes = Attributes{
-                .read_only = ((info.fattrib) & c.AM_RDO) != 0,
-                .hidden = ((info.fattrib) & c.AM_HID) != 0,
-                .system = ((info.fattrib) & c.AM_SYS) != 0,
-                .archive = ((info.fattrib) & c.AM_ARC) != 0,
-            },
+            .attributes = @bitCast(info.fattrib),
             .name_buffer = info.fname,
             .altname_buffer = if (@hasField(c.FILINFO, "altname")) info.altname else [1]u8{0},
         };
@@ -211,6 +284,24 @@ pub const FileInfo = struct {
 
     const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
     const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
+
+    pub fn format(info: FileInfo, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print(
+            \\{s}{{ .size={}, .date = {}, .time = {}, .kind = .{s}, .attributes = {}, .name = '{}', .altname = '{}' }}
+        , .{
+            @typeName(FileInfo),
+            info.size,
+            info.date,
+            info.time,
+            @tagName(info.kind),
+            info.attributes,
+            std.zig.fmtEscapes(info.name()),
+            std.zig.fmtEscapes(info.altName()),
+        });
+    }
 };
 
 pub const Kind = enum { File, Directory };
@@ -220,12 +311,31 @@ pub const Date = struct {
     month: std.time.epoch.Month,
     day: u8,
 
-    pub fn fromFDate(val: u16) Date {
-        return Date{
-            .year = 1980 + (val >> 9),
-            .month = @as(std.time.epoch.Month, @enumFromInt(@as(u4, @truncate((val >> 5) & 0x0F)))),
-            .day = @as(u8, @truncate((val >> 0) & 0x15)),
+    pub fn init(year: u16, month: std.time.epoch.Month, day: u8) Date {
+        std.debug.assert(year >= 1980 and year <= 1980 + 127);
+        std.debug.assert(day >= 1 and day <= 31);
+        return .{
+            .year = year,
+            .month = month,
+            .day = day,
         };
+    }
+
+    pub fn decode(val: u16) Date {
+        const enc: Encoded = @bitCast(val);
+        return Date{
+            .year = 1980 + @as(u16, enc.years_from_1980),
+            .month = @as(std.time.epoch.Month, @enumFromInt(enc.month)),
+            .day = enc.day,
+        };
+    }
+
+    pub fn encode(date: Date) u16 {
+        return @bitCast(Encoded{
+            .years_from_1980 = @intCast(date.year - 1980),
+            .day = @intCast(date.day),
+            .month = @intFromEnum(date.month),
+        });
     }
 
     pub fn format(date: Date, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
@@ -237,6 +347,17 @@ pub const Date = struct {
             date.day,
         });
     }
+
+    pub const Encoded = packed struct(u16) {
+        /// bit[4:0]: Day (1..31)
+        day: u5,
+
+        /// bit[8:5]: Month (1..12)
+        month: u4,
+
+        /// bit[15:9]: Year origin from 1980 (0..127)
+        years_from_1980: u7,
+    };
 };
 
 pub const Time = struct {
@@ -244,12 +365,32 @@ pub const Time = struct {
     minute: u8,
     second: u8,
 
-    pub fn fromFTime(val: u16) Time {
-        return Time{
-            .hour = @as(u8, @truncate((val >> 11))),
-            .minute = @as(u8, @truncate((val >> 5) & 0x3F)),
-            .second = 2 * @as(u8, @truncate((val >> 0) & 0x1F)),
+    pub fn init(hour: u8, minute: u8, second: u8) Time {
+        std.debug.assert(hour >= 0 and hour <= 24);
+        std.debug.assert(minute >= 0 and minute <= 60);
+        std.debug.assert(second >= 0 and second <= 60);
+        return .{
+            .hour = hour,
+            .minute = minute,
+            .second = second,
         };
+    }
+
+    pub fn decode(val: u16) Time {
+        const enc: Encoded = @bitCast(val);
+        return Time{
+            .hour = enc.hour,
+            .minute = enc.minute,
+            .second = 2 * @as(u8, enc.double_second),
+        };
+    }
+
+    pub fn encode(time: Time) u16 {
+        return @bitCast(Encoded{
+            .hour = @intCast(time.hour),
+            .minute = @intCast(time.minute),
+            .double_second = @intCast(time.second / 2),
+        });
     }
 
     pub fn format(time: Time, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
@@ -261,6 +402,15 @@ pub const Time = struct {
             time.second,
         });
     }
+
+    pub const Encoded = packed struct(u16) {
+        /// bit[4:0]: Second / 2 (0..29)
+        double_second: u5,
+        /// bit[10:5]: Minute (0..59)
+        minute: u6,
+        /// bit[15:11]: Hour (0..23)
+        hour: u5,
+    };
 };
 
 pub const File = struct {
@@ -460,8 +610,6 @@ pub const Disk = struct {
     };
 };
 
-pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
-
 pub const WRITE = c.FA_WRITE;
 pub const CREATE_ALWAYS = c.FA_CREATE_ALWAYS;
 pub const OK = c.FR_OK;
@@ -515,16 +663,25 @@ pub const api = struct {
 };
 
 const RtcExport = struct {
+    const Encoded = packed struct(c.DWORD) {
+        /// bit[4:0]: Second / 2 (0..29, e.g. 25 for 50)
+        double_second: u5,
+        /// bit[10:5]: Minute (0..59)
+        minute: u6,
+        /// bit[15:11]: Hour (0..23)
+        hour: u5,
+        /// bit[20:16]: Day of the month (1..31)
+        day: u5,
+        /// bit[24:21]: Month (1..12)
+        month: u4,
+        /// bit[31:25]: Year origin from the 1980 (0..127, e.g. 37 for 2017)
+        year_from_1980: u7,
+    };
 
     // Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
-    // bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
-    // bit24:21  Month (1..12)
-    // bit20:16  Day of the month (1..31)
-    // bit15:11  Hour (0..23)
-    // bit10:5  Minute (0..59)
-    // bit4:0  Second / 2 (0..29, e.g. 25 for 50)
+
     export fn get_fattime() c.DWORD {
-        const timestamp = std.time.timestamp() - std.time.epoch.dos;
+        const timestamp = std.time.timestamp();
 
         const epoch_secs = std.time.epoch.EpochSeconds{
             .secs = @as(u64, @intCast(timestamp)),
@@ -536,22 +693,24 @@ const RtcExport = struct {
         const year_and_day = epoch_day.calculateYearDay();
         const month_and_day = year_and_day.calculateMonthDay();
 
-        const year: u32 = year_and_day.year;
-        const month: u32 = @intFromEnum(month_and_day.month);
-        const day: u32 = month_and_day.day_index + 1;
+        const year = year_and_day.year;
+        const month = @intFromEnum(month_and_day.month);
+        const day = month_and_day.day_index + 1;
 
-        const hour: u32 = day_secs.getHoursIntoDay();
-        const minute: u32 = day_secs.getMinutesIntoHour();
-        const second: u32 = day_secs.getSecondsIntoMinute();
+        const hour = day_secs.getHoursIntoDay();
+        const minute = day_secs.getMinutesIntoHour();
+        const second = day_secs.getSecondsIntoMinute();
 
-        return 0 |
-            (year << 25) | // bit31:25  Year origin from the 1980 (0..127, e.g. 37 for 2017)
-            (month << 21) | // bit24:21  Month (1..12)
-            (day << 16) | // bit20:16  Day of the month (1..31)
-            (hour << 11) | // bit15:11  Hour (0..23)
-            (minute << 5) | // bit10:5  Minute (0..59)
-            ((second / 2) << 0) // bit4:0  Second / 2 (0..29, e.g. 25 for 50)
-        ;
+        const dateTime = Encoded{
+            .double_second = @intCast(second / 2),
+            .minute = minute,
+            .hour = hour,
+            .day = day,
+            .month = month,
+            .year_from_1980 = @intCast(std.math.clamp(year - 1980, 0, 127)),
+        };
+
+        return @bitCast(dateTime);
     }
 };
 

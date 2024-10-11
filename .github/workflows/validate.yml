@@ -38,3 +38,9 @@ jobs:
           zig build -Dvolume-count=10
           zig build -Dvolume-names=C
           zig build -Dvolume-names=C,D,E,F
+
+      - name: Execute Tests
+        run: |
+          cd test
+          zig build
+          ./zig-out/bin/zfat-op-tester
