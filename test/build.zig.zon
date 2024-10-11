@@ -1,0 +1,14 @@
+.{
+    .name = "zfat-tests",
+    .version = "0.1.0",
+    .paths = .{
+        "op_tester.zig",
+        "build.zig",
+        "build.zig.zon",
+    },
+    .dependencies = .{
+        .zfat = .{
+            .path = "..",
+        },
+    },
+}

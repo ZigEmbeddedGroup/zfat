@@ -40,12 +40,12 @@ pub fn stat(path: Path) StatError.Error!FileInfo {
 
 pub const ChmodError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
 pub fn chmod(path: Path, attributes: u8, mask: u8) ChmodError.Error!void {
-    try ChmodError.throw(api.unlink(path.ptr, attributes, mask));
+    try ChmodError.throw(api.chmod(path.ptr, attributes, mask));
 }
 
 pub const UTimeError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
 pub fn utime(path: Path, file_info: c.FILINFO) UTimeError.Error!void {
-    try UTimeError.throw(api.unlink(path.ptr, &file_info));
+    try UTimeError.throw(api.utime(path.ptr, &file_info));
 }
 
 pub const ChDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });

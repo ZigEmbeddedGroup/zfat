@@ -32,7 +32,10 @@
         packages.default = pkgs.stdenv.mkDerivation {
           name = "turtlefont";
           src = ./.;
-          nativeBuildInputs = [zig];
+          nativeBuildInputs = [
+            zig 
+            pkgs.gdb
+           ];
 
           configurePhase = "";
 
