@@ -863,7 +863,7 @@ const FR_INVALID_PARAMETER = error.InvalidParameter;
 fn ErrorSet(comptime options: []const anyerror) type {
     return struct {
         pub const Error: type = @Type(.{
-            .ErrorSet = blk: {
+            .error_set = blk: {
                 var names: [options.len]std.builtin.Type.Error = undefined;
                 for (&names, options) |*name, err| {
                     name.* = .{ .name = @errorName(err) };
