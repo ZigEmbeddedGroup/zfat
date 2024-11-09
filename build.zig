@@ -253,9 +253,9 @@ fn add_config_field(b: *std.Build, module: *std.Build.Module, config: Config, co
 
     const str_value: []const u8 = if (Type == VolumeKind or Type == SectorSize or Type == RtcConfig)
         return // we don't emit these automatically
-    else if (type_info == .Enum)
+    else if (type_info == .@"enum")
         b.fmt("{d}", .{@intFromEnum(value)})
-    else if (type_info == .Int)
+    else if (type_info == .int)
         b.fmt("{d}", .{value})
     else if (Type == bool)
         b.fmt("{d}", .{@intFromBool(value)})
