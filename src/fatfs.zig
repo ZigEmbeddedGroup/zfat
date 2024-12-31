@@ -282,8 +282,8 @@ pub const FileInfo = struct {
         return std.mem.sliceTo(&self.altname_buffer, 0);
     }
 
-    const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
-    const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
+    pub const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
+    pub const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
 
     pub fn format(info: FileInfo, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
