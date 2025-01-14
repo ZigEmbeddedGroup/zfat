@@ -144,7 +144,7 @@ pub fn build(b: *std.Build) void {
     });
     zfat_lib.installHeader(b.path("src/fatfs/ff.h"), "ff.h");
     zfat_lib.installHeader(b.path("src/fatfs/diskio.h"), "diskio.h");
-    initialize_mod(b, &zfat_lib.root_module, config, link_libc);
+    initialize_mod(b, zfat_lib.root_module, config, link_libc);
 
     const zfat_mod = b.addModule("zfat", .{
         .root_source_file = b.path("src/fatfs.zig"),
