@@ -30,7 +30,10 @@ pub fn main() !u8 {
         var file = try fatfs.File.create("0:/firmware.uf2");
         defer file.close();
 
-        try file.writer().writeAll("Hello, World!\r\n");
+        var buffer: [4096]u8 = undefined;
+        var writer = file.writer(&buffer);
+
+        try writer.interface.writeAll("Hello, World!\r\n");
     }
 
     return 0;

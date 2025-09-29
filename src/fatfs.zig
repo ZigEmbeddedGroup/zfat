@@ -222,11 +222,10 @@ pub const Attributes = packed struct(u8) {
         std.debug.assert(@bitOffsetOf(Attributes, "archive") == 5);
     }
 
-    pub fn format(attrs: Attributes, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(attrs: Attributes, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        var buf: [8][]const u8 = undefined; // i miss `BoundedArray`
+        var keys: std.ArrayList([]const u8) = .initBuffer(&buf);
 
-        var keys = std.BoundedArray([]const u8, 8){};
         if (attrs.read_only) keys.appendAssumeCapacity("read_only");
         if (attrs.hidden) keys.appendAssumeCapacity("hidden");
         if (attrs.system) keys.appendAssumeCapacity("system");
@@ -238,10 +237,10 @@ pub const Attributes = packed struct(u8) {
 
         try writer.print("{s}{{", .{@typeName(Attributes)});
 
-        if (keys.len > 0) {
+        if (keys.items.len > 0) {
             try writer.writeAll(" ");
-            try writer.writeAll(keys.buffer[0]);
-            for (keys.slice()[1..]) |other| {
+            try writer.writeAll(keys.items[0]);
+            for (keys.items[1..]) |other| {
                 try writer.writeAll(", ");
                 try writer.writeAll(other);
             }
@@ -285,12 +284,9 @@ pub const FileInfo = struct {
     pub const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
     pub const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
 
-    pub fn format(info: FileInfo, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(info: FileInfo, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print(
-            \\{s}{{ .size={}, .date = {}, .time = {}, .kind = .{s}, .attributes = {}, .name = '{}', .altname = '{}' }}
+            \\{s}{{ .size={}, .date = {f}, .time = {f}, .kind = .{s}, .attributes = {f}, .name = '{f}', .altname = '{f}' }}
         , .{
             @typeName(FileInfo),
             info.size,
@@ -298,8 +294,8 @@ pub const FileInfo = struct {
             info.time,
             @tagName(info.kind),
             info.attributes,
-            std.zig.fmtEscapes(info.name()),
-            std.zig.fmtEscapes(info.altName()),
+            std.zig.fmtString(info.name()),
+            std.zig.fmtString(info.altName()),
         });
     }
 };
@@ -338,9 +334,7 @@ pub const Date = struct {
         });
     }
 
-    pub fn format(date: Date, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+    pub fn format(date: Date, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
             date.year,
             @intFromEnum(date.month),
@@ -393,9 +387,7 @@ pub const Time = struct {
         });
     }
 
-    pub fn format(time: Time, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+    pub fn format(time: Time, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("{d:0>2}:{d:0>2}:{d:0>2}", .{
             time.hour,
             time.minute,
@@ -537,14 +529,108 @@ pub const File = struct {
         return written;
     }
 
-    pub const Reader = std.io.Reader(*Self, ReadError.Error, read);
-    pub fn reader(file: *Self) Reader {
-        return Reader{ .context = file };
+    pub const Reader = struct {
+        file: *File,
+        err: ?ReadError = null,
+        interface: std.io.Reader,
+
+        fn stream(io_reader: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+            const file_reader: *Reader = @alignCast(@fieldParentPtr("interface", io_reader));
+            const dest = limit.slice(try w.writableSliceGreedy(1));
+            const n = file_reader.file.read(dest) catch |err| {
+                file_reader.err = err;
+                return error.ReadFailed;
+            };
+            w.advance(n);
+            if (n < dest.len) return error.EndOfStream;
+            return n;
+        }
+    };
+
+    pub fn reader(file: *Self, buffer: []u8) Reader {
+        return .{
+            .file = file,
+            .interface = .{
+                .vtable = &.{
+                    .stream = Reader.stream,
+                },
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+            },
+        };
     }
 
-    pub const Writer = std.io.Writer(*Self, WriteError.Error, write);
-    pub fn writer(file: *Self) Writer {
-        return Writer{ .context = file };
+    pub const Writer = struct {
+        file: *File,
+        err: ?WriterError = null,
+        interface: std.io.Writer,
+
+        pub const WriterError = error{
+            VolumeFull,
+        } || WriteError.Error;
+
+        fn drain(io_writer: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+            const file_writer: *Writer = @alignCast(@fieldParentPtr("interface", io_writer));
+
+            if (io_writer.end != 0) {
+                const n = file_writer.file.write(io_writer.buffered()) catch |err| {
+                    file_writer.err = err;
+                    return error.WriteFailed;
+                };
+                io_writer.end -= n;
+                if (n < io_writer.end) {
+                    file_writer.err = error.VolumeFull;
+                    return error.WriteFailed;
+                }
+                std.debug.assert(io_writer.end == 0);
+            }
+
+            var written: usize = 0;
+
+            for (data[0 .. data.len - 1]) |slice| {
+                if (slice.len == 0) continue;
+                const n = file_writer.file.write(slice) catch |err| {
+                    file_writer.err = err;
+                    return error.WriteFailed;
+                };
+                if (n < slice.len) {
+                    file_writer.err = error.VolumeFull;
+                    return error.WriteFailed;
+                }
+                written += n;
+            }
+
+            const last_data = data[data.len - 1];
+            if (last_data.len != 0) {
+                for (0..splat) |_| {
+                    const n = file_writer.file.write(last_data) catch |err| {
+                        file_writer.err = err;
+                        return error.WriteFailed;
+                    };
+                    if (n < last_data.len) {
+                        file_writer.err = error.VolumeFull;
+                        return error.WriteFailed;
+                    }
+                    written += n;
+                }
+            }
+
+            return io_writer.consume(written);
+        }
+    };
+
+    pub fn writer(file: *Self, buffer: []u8) Writer {
+        return .{
+            .file = file,
+            .interface = .{
+                .vtable = &.{
+                    .drain = Writer.drain,
+                },
+                .buffer = buffer,
+                .end = 0,
+            },
+        };
     }
 };
 

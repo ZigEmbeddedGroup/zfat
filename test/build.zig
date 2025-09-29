@@ -28,9 +28,11 @@ pub fn build(b: *std.Build) void {
 
     const op_tester = b.addExecutable(.{
         .name = "zfat-op-tester",
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("op_tester.zig"),
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("op_tester.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     op_tester.root_module.addImport("zfat", zfat_mod);
     op_tester.linkLibC();

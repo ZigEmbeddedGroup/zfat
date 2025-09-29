@@ -20,37 +20,37 @@ pub fn build(b: *std.Build) void {
     const config = blk: {
         var config = Config{};
 
-        add_config_option(b, &config, .read_only, "If set, the library will only be able to read filesystems.");
-        add_config_option(b, &config, .minimize, "Set this to different values to reduce API surface");
-        add_config_option(b, &config, .find, "Enable find support");
-        add_config_option(b, &config, .mkfs, "Enable mkfs support");
-        add_config_option(b, &config, .fastseek, "Use fast seek option");
-        add_config_option(b, &config, .expand, "Enables expandfs support");
-        add_config_option(b, &config, .chmod, "Enables chmod support");
-        add_config_option(b, &config, .label, "Enables support for handling of filesystem labels");
-        add_config_option(b, &config, .forward, "Enables forward support");
-        add_config_option(b, &config, .strfuncs, "Enables file string functions");
-        add_config_option(b, &config, .printf_lli, "Enables printf_lli support");
-        add_config_option(b, &config, .printf_float, "Enables printf_float support");
-        add_config_option(b, &config, .strf_encoding, "Sets the format string encoding");
-        add_config_option(b, &config, .max_long_name_len, "Sets the maximum name for long file names");
-        add_config_option(b, &config, .code_page, "Defines the OEM code page");
-        add_config_option(b, &config, .long_file_name, "Enables long file name support");
-        add_config_option(b, &config, .long_file_name_encoding, "Sets the encoding for long file names");
-        add_config_option(b, &config, .long_file_name_buffer_size, "Sets the buffer size for long file names");
-        add_config_option(b, &config, .short_file_name_buffer_size, "Sets the buffer size for short file names");
-        add_config_option(b, &config, .relative_path_api, "Enables the relative path API");
-        add_config_option(b, &config, .multi_partition, "Enables support for several partitions on the same drive");
-        add_config_option(b, &config, .lba64, "Enables support for 64 bit linear block addresses.");
-        add_config_option(b, &config, .min_gpt_sectors, "Sector count threshold for switching to GPT partition tables");
-        add_config_option(b, &config, .use_trim, "Enables support for ATA TRIM command");
-        add_config_option(b, &config, .tiny, "Enable tiny buffer configuration");
-        add_config_option(b, &config, .exfat, "Enables support for ExFAT");
-        add_config_option(b, &config, .filesystem_trust, "Sets which values in the FSINFO structure you trust.");
-        add_config_option(b, &config, .lock, "Enables file system locking");
-        add_config_option(b, &config, .reentrant, "Makes the library reentrant");
-        add_config_option(b, &config, .sync_type, "Defines the name of the C type which is used for sync operations");
-        add_config_option(b, &config, .timeout, "Defines the timeout period in OS ticks");
+        add_config_option(b, &config, "read_only", "If set, the library will only be able to read filesystems.");
+        add_config_option(b, &config, "minimize", "Set this to different values to reduce API surface");
+        add_config_option(b, &config, "find", "Enable find support");
+        add_config_option(b, &config, "mkfs", "Enable mkfs support");
+        add_config_option(b, &config, "fastseek", "Use fast seek option");
+        add_config_option(b, &config, "expand", "Enables expandfs support");
+        add_config_option(b, &config, "chmod", "Enables chmod support");
+        add_config_option(b, &config, "label", "Enables support for handling of filesystem labels");
+        add_config_option(b, &config, "forward", "Enables forward support");
+        add_config_option(b, &config, "strfuncs", "Enables file string functions");
+        add_config_option(b, &config, "printf_lli", "Enables printf_lli support");
+        add_config_option(b, &config, "printf_float", "Enables printf_float support");
+        add_config_option(b, &config, "strf_encoding", "Sets the format string encoding");
+        add_config_option(b, &config, "max_long_name_len", "Sets the maximum name for long file names");
+        add_config_option(b, &config, "code_page", "Defines the OEM code page");
+        add_config_option(b, &config, "long_file_name", "Enables long file name support");
+        add_config_option(b, &config, "long_file_name_encoding", "Sets the encoding for long file names");
+        add_config_option(b, &config, "long_file_name_buffer_size", "Sets the buffer size for long file names");
+        add_config_option(b, &config, "short_file_name_buffer_size", "Sets the buffer size for short file names");
+        add_config_option(b, &config, "relative_path_api", "Enables the relative path API");
+        add_config_option(b, &config, "multi_partition", "Enables support for several partitions on the same drive");
+        add_config_option(b, &config, "lba64", "Enables support for 64 bit linear block addresses.");
+        add_config_option(b, &config, "min_gpt_sectors", "Sector count threshold for switching to GPT partition tables");
+        add_config_option(b, &config, "use_trim", "Enables support for ATA TRIM command");
+        add_config_option(b, &config, "tiny", "Enable tiny buffer configuration");
+        add_config_option(b, &config, "exfat", "Enables support for ExFAT");
+        add_config_option(b, &config, "filesystem_trust", "Sets which values in the FSINFO structure you trust.");
+        add_config_option(b, &config, "lock", "Enables file system locking");
+        add_config_option(b, &config, "reentrant", "Makes the library reentrant");
+        add_config_option(b, &config, "sync_type", "Defines the name of the C type which is used for sync operations");
+        add_config_option(b, &config, "timeout", "Defines the timeout period in OS ticks");
 
         const maybe_rtc_time = b.option([]const u8, "static-rtc", "Disables runtime time API by setting the clock to a fixed value. Provide a string in the format YYYY-MM-DD");
         if (maybe_rtc_time) |rtc_time| {
@@ -91,13 +91,13 @@ pub fn build(b: *std.Build) void {
         }
 
         if (maybe_volume_names) |volume_names| {
-            var volumes = std.ArrayList([]const u8).init(b.allocator);
+            var volumes: std.ArrayList([]const u8) = .empty;
 
             var iter = std.mem.splitScalar(u8, volume_names, ',');
             while (iter.next()) |name| {
-                volumes.append(name) catch @panic("out of memory");
+                volumes.append(b.allocator, name) catch @panic("out of memory");
             }
-            config.volumes = .{ .named = volumes.items };
+            config.volumes = .{ .named = volumes.toOwnedSlice(b.allocator) catch @panic("out of memory") };
         }
 
         const maybe_sector_config = b.option([]const u8, "sector-size", "Defines the sector size range. Use `<min>:<max>` or `<fixed>`. Valid items for the range are 512, 1024, 2048 or 4096. No other values allowed.");
@@ -109,20 +109,20 @@ pub fn build(b: *std.Build) void {
                 config.sector_size = .{
                     .dynamic = .{
                         .minimum = std.meta.stringToEnum(SectorOption, min) orelse bad_config(
-                            "Invalid value for -Dsector-size: '{}'",
-                            .{std.zig.fmtEscapes(sector_config)},
+                            "Invalid value for -Dsector-size: '{f}'",
+                            .{std.zig.fmtString(sector_config)},
                         ),
                         .maximum = std.meta.stringToEnum(SectorOption, max) orelse bad_config(
-                            "Invalid value for -Dsector-size: '{}'",
-                            .{std.zig.fmtEscapes(sector_config)},
+                            "Invalid value for -Dsector-size: '{f}'",
+                            .{std.zig.fmtString(sector_config)},
                         ),
                     },
                 };
             } else {
                 config.sector_size = .{
                     .static = std.meta.stringToEnum(SectorOption, sector_config) orelse bad_config(
-                        "Invalid value for -Dsector-size: '{}'",
-                        .{std.zig.fmtEscapes(sector_config)},
+                        "Invalid value for -Dsector-size: '{f}'",
+                        .{std.zig.fmtString(sector_config)},
                     ),
                 };
             }
@@ -147,14 +147,12 @@ pub fn build(b: *std.Build) void {
             });
         },
         .named => |strings| {
-            var list = std.ArrayList(u8).init(b.allocator);
+            var list: std.ArrayList(u8) = .empty;
             for (strings) |name| {
                 if (list.items.len > 0) {
-                    list.appendSlice(", ") catch @panic("out of memory");
+                    list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
                 }
-                list.writer().print("\"{}\"", .{
-                    std.fmt.fmtSliceHexUpper(name),
-                }) catch @panic("out of memory");
+                list.writer(b.allocator).print("\"{X}\"", .{name}) catch @panic("out of memory");
             }
             config_header.addValues(.{
                 .FF_VOLUMES = @as(i64, @intCast(strings.len)),
@@ -249,9 +247,11 @@ pub fn build(b: *std.Build) void {
     // usage demo:
     const exe = b.addExecutable(.{
         .name = "zfat-demo",
-        .root_source_file = b.path("demo/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("demo/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe.root_module.addImport("zfat", zfat_mod);
 
@@ -284,10 +284,10 @@ fn add_config_field(config_header: *std.Build.Step.ConfigHeader, config: Config,
     }
 }
 
-fn add_config_option(b: *std.Build, config: *Config, comptime field: @TypeOf(.tag), desc: []const u8) void {
-    const T = std.meta.FieldType(Config, field);
-    if (b.option(T, @tagName(field), desc)) |value|
-        @field(config, @tagName(field)) = value;
+fn add_config_option(b: *std.Build, config: *Config, comptime field: []const u8, desc: []const u8) void {
+    const T = @FieldType(Config, field);
+    if (b.option(T, field, desc)) |value|
+        @field(config, field) = value;
 }
 
 pub const Config = struct {
