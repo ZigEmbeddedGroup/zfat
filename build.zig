@@ -40,6 +40,7 @@ pub fn build(b: *std.Build) void {
         add_config_option(b, &config, "long_file_name_buffer_size", "Sets the buffer size for long file names");
         add_config_option(b, &config, "short_file_name_buffer_size", "Sets the buffer size for short file names");
         add_config_option(b, &config, "relative_path_api", "Enables the relative path API");
+        add_config_option(b, &config, "maximum_path_depth", "Sets the maximum path depth");
         add_config_option(b, &config, "multi_partition", "Enables support for several partitions on the same drive");
         add_config_option(b, &config, "lba64", "Enables support for 64 bit linear block addresses.");
         add_config_option(b, &config, "min_gpt_sectors", "Sector count threshold for switching to GPT partition tables");
@@ -136,7 +137,7 @@ pub fn build(b: *std.Build) void {
         .style = .blank,
         .include_path = "ffconf.h",
     }, .{
-        .FFCONF_DEF = 5380,
+        .FFCONF_DEF = 80386,
     });
 
     switch (config.volumes) {
@@ -311,6 +312,7 @@ pub const Config = struct {
     long_file_name_buffer_size: u32 = 255,
     short_file_name_buffer_size: u32 = 12,
     relative_path_api: RelativePathApi = .disabled,
+    maximum_path_depth: u8 = 10,
     volumes: VolumeKind = .{ .count = 1 },
     sector_size: SectorSize = .{ .static = .@"512" },
     multi_partition: bool = false,
@@ -449,6 +451,7 @@ const macro_names = struct {
     pub const long_file_name_buffer_size = "FF_LFN_BUF";
     pub const short_file_name_buffer_size = "FF_SFN_BUF";
     pub const relative_path_api = "FF_FS_RPATH";
+    pub const maximum_path_depth = "FF_PATH_DEPTH";
     pub const multi_partition = "FF_MULTI_PARTITION";
     pub const lba64 = "FF_LBA64";
     pub const min_gpt_sectors = "FF_MIN_GPT";

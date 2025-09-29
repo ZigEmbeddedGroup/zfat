@@ -1,12 +1,12 @@
 .{
     .name = .zfat,
     .fingerprint = 0x4212c7b5f54ad348,
-    .version = "0.15.0",
+    .version = "0.16.0",
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .fatfs = .{
-            .url = "http://elm-chan.org/fsw/ff/arc/ff15a.zip",
-            .hash = "N-V-__8AAFQITQCnpmdR7PARImvk-cgb-9lZmjKolexSWkUL",
+            .url = "https://www.elm-chan.org/fsw/ff/arc/ff16.zip",
+            .hash = "N-V-__8AABFXTQB0pMbXIuSQik3qRrx7zxcVxvyIaM7n2nEd",
         },
     },
     .paths = .{
