@@ -532,7 +532,7 @@ pub const File = struct {
     pub const Reader = struct {
         file: *File,
         err: ?ReadError = null,
-        interface: std.io.Reader,
+        interface: std.Io.Reader,
 
         fn stream(io_reader: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
             const file_reader: *Reader = @alignCast(@fieldParentPtr("interface", io_reader));
@@ -564,7 +564,7 @@ pub const File = struct {
     pub const Writer = struct {
         file: *File,
         err: ?WriterError = null,
-        interface: std.io.Writer,
+        interface: std.Io.Writer,
 
         pub const WriterError = error{
             VolumeFull,

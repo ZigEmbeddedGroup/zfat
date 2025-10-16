@@ -290,7 +290,7 @@ pub const RamDisk = struct {
 
         std.log.debug("read({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
+        var sectors = std.Io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
         sectors.seekTo(sector * sector_size) catch return error.IoError;
         sectors.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
     }
@@ -300,7 +300,7 @@ pub const RamDisk = struct {
 
         std.log.debug("write({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
+        var sectors = std.Io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
         sectors.seekTo(sector * sector_size) catch return error.IoError;
         sectors.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
     }
