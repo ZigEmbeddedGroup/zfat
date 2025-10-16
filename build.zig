@@ -148,17 +148,18 @@ pub fn build(b: *std.Build) void {
             });
         },
         .named => |strings| {
-            var list: std.ArrayList(u8) = .empty;
+            var list: std.Io.Writer.Allocating = .init(b.allocator);
             for (strings) |name| {
-                if (list.items.len > 0) {
-                    list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
+                if (list.written().len > 0) {
+                    list.writer.writeAll(", ") catch @panic("out of memory");
                 }
-                list.writer(b.allocator).print("\"{X}\"", .{name}) catch @panic("out of memory");
+                list.writer.print("\"{X}\"", .{name}) catch @panic("out of memory");
             }
+
             config_header.addValues(.{
                 .FF_VOLUMES = @as(i64, @intCast(strings.len)),
                 .FF_STR_VOLUME_ID = 1,
-                .FF_VOLUME_STRS = list.items,
+                .FF_VOLUME_STRS = list.written(),
             });
         },
     }
