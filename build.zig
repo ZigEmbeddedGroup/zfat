@@ -91,11 +91,11 @@ pub fn build(b: *std.Build) void {
         }
 
         if (maybe_volume_names) |volume_names| {
-            var volumes = std.ArrayList([]const u8).init(b.allocator);
+            var volumes: std.ArrayList([]const u8) = .empty;
 
             var iter = std.mem.splitScalar(u8, volume_names, ',');
             while (iter.next()) |name| {
-                volumes.append(name) catch @panic("out of memory");
+                volumes.append(b.allocator, name) catch @panic("out of memory");
             }
             config.volumes = .{ .named = volumes.items };
         }
@@ -109,20 +109,20 @@ pub fn build(b: *std.Build) void {
                 config.sector_size = .{
                     .dynamic = .{
                         .minimum = std.meta.stringToEnum(SectorOption, min) orelse bad_config(
-                            "Invalid value for -Dsector-size: '{}'",
-                            .{std.zig.fmtEscapes(sector_config)},
+                            "Invalid value for -Dsector-size: '{f}'",
+                            .{std.zig.fmtString(sector_config)},
                         ),
                         .maximum = std.meta.stringToEnum(SectorOption, max) orelse bad_config(
-                            "Invalid value for -Dsector-size: '{}'",
-                            .{std.zig.fmtEscapes(sector_config)},
+                            "Invalid value for -Dsector-size: '{f}'",
+                            .{std.zig.fmtString(sector_config)},
                         ),
                     },
                 };
             } else {
                 config.sector_size = .{
                     .static = std.meta.stringToEnum(SectorOption, sector_config) orelse bad_config(
-                        "Invalid value for -Dsector-size: '{}'",
-                        .{std.zig.fmtEscapes(sector_config)},
+                        "Invalid value for -Dsector-size: '{f}'",
+                        .{std.zig.fmtString(sector_config)},
                     ),
                 };
             }
@@ -136,7 +136,7 @@ pub fn build(b: *std.Build) void {
         .style = .blank,
         .include_path = "ffconf.h",
     }, .{
-        .FFCONF_DEF = 5380,
+        .FFCONF_DEF = 5385,
     });
 
     switch (config.volumes) {
@@ -147,13 +147,13 @@ pub fn build(b: *std.Build) void {
             });
         },
         .named => |strings| {
-            var list = std.ArrayList(u8).init(b.allocator);
+            var list: std.ArrayList(u8) = .empty;
             for (strings) |name| {
                 if (list.items.len > 0) {
-                    list.appendSlice(", ") catch @panic("out of memory");
+                    list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
                 }
-                list.writer().print("\"{}\"", .{
-                    std.fmt.fmtSliceHexUpper(name),
+                list.writer(b.allocator).print("\"{X}\"", .{
+                    name,
                 }) catch @panic("out of memory");
             }
             config_header.addValues(.{
@@ -198,18 +198,17 @@ pub fn build(b: *std.Build) void {
     }
 
     // module:
-    const upstream = b.dependency("fatfs", .{});
 
     const mod_options = b.addOptions();
     mod_options.addOption(bool, "has_rtc", (config.rtc != .static));
 
     // create copy of the upstream without ffconf.h
     const upstream_copy = b.addWriteFiles();
-    _ = upstream_copy.addCopyFile(upstream.path("source/ff.c"), "ff.c");
-    _ = upstream_copy.addCopyFile(upstream.path("source/ff.h"), "ff.h");
-    _ = upstream_copy.addCopyFile(upstream.path("source/diskio.h"), "diskio.h");
-    _ = upstream_copy.addCopyFile(upstream.path("source/ffunicode.c"), "ffunicode.c");
-    _ = upstream_copy.addCopyFile(upstream.path("source/ffsystem.c"), "ffsystem.c");
+    _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ff.c"), "ff.c");
+    _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ff.h"), "ff.h");
+    _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/diskio.h"), "diskio.h");
+    _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffunicode.c"), "ffunicode.c");
+    _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffsystem.c"), "ffsystem.c");
     const upstream_copy_dir = upstream_copy.getDirectory();
 
     const zfat_lib_mod = b.createModule(.{
@@ -249,11 +248,15 @@ pub fn build(b: *std.Build) void {
     // usage demo:
     const exe = b.addExecutable(.{
         .name = "zfat-demo",
-        .root_source_file = b.path("demo/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("demo/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zfat", .module = zfat_mod },
+            },
+        }),
     });
-    exe.root_module.addImport("zfat", zfat_mod);
 
     const demo_exe = b.addInstallArtifact(exe, .{});
     demo_step.dependOn(&demo_exe.step);
@@ -285,7 +288,7 @@ fn add_config_field(config_header: *std.Build.Step.ConfigHeader, config: Config,
 }
 
 fn add_config_option(b: *std.Build, config: *Config, comptime field: @TypeOf(.tag), desc: []const u8) void {
-    const T = std.meta.FieldType(Config, field);
+    const T = @FieldType(Config, @tagName(field));
     if (b.option(T, @tagName(field), desc)) |value|
         @field(config, @tagName(field)) = value;
 }
