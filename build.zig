@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const link_libc = !(b.option(bool, "no-libc", "Prevents linking of libc by default") orelse false);
+    const link_libc = b.option(bool, "libc", "Forces the linking of libc");
 
     const config = blk: {
         var config = Config{};
@@ -211,14 +211,14 @@ pub fn build(b: *std.Build) void {
     _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffsystem.c"), "ffsystem.c");
     const upstream_copy_dir = upstream_copy.getDirectory();
 
-    const zfat_lib_mod = b.createModule(.{
+    const zfat_mod = b.addModule("zfat", .{
+        .root_source_file = b.path("src/fatfs.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = link_libc,
     });
-    zfat_lib_mod.addCSourceFiles(.{
+    zfat_mod.addCSourceFiles(.{
         .root = upstream_copy_dir,
-
         .files = &.{
             "ff.c",
             "ffunicode.c",
@@ -226,23 +226,8 @@ pub fn build(b: *std.Build) void {
         },
         .flags = &.{"-std=c99"},
     });
-    zfat_lib_mod.addConfigHeader(config_header);
-
-    const zfat = b.addLibrary(.{
-        .linkage = .static,
-        .name = "zfat",
-        .root_module = zfat_lib_mod,
-    });
-    zfat.installHeader(upstream_copy_dir.path(b, "ff.h"), "ff.h");
-    zfat.installHeader(upstream_copy_dir.path(b, "diskio.h"), "diskio.h");
-    zfat.installConfigHeader(config_header);
-
-    const zfat_mod = b.addModule("zfat", .{
-        .root_source_file = b.path("src/fatfs.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    zfat_mod.linkLibrary(zfat);
+    zfat_mod.addIncludePath(upstream_copy_dir.path(b, "."));
+    zfat_mod.addConfigHeader(config_header);
     zfat_mod.addOptions("config", mod_options);
 
     // usage demo:
