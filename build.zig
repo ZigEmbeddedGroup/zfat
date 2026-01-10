@@ -237,6 +237,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("demo/main.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
             .imports = &.{
                 .{ .name = "zfat", .module = zfat_mod },
             },

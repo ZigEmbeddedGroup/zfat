@@ -30,7 +30,33 @@ pub fn main() !u8 {
         var file = try fatfs.File.create("0:/firmware.uf2");
         defer file.close();
 
-        try file.writer().writeAll("Hello, World!\r\n");
+        var buffer: [64]u8 = undefined;
+
+        const test_string = "Hello, World!\r\n";
+
+        var writer = file.writer(&buffer);
+        try writer.writer.writeAll(test_string);
+        try writer.writer.flush();
+
+        try std.testing.expectEqual(true, file.endOfFile());
+        try std.testing.expectEqual(test_string.len, file.size());
+
+        try file.seekTo(test_string.len / 2);
+        try std.testing.expectEqual(false, file.endOfFile());
+        try std.testing.expectEqual(test_string.len / 2, file.tell());
+        try std.testing.expectEqual(test_string.len, file.size());
+
+        try std.testing.expectEqual(false, file.hasError());
+
+        try file.rewind();
+        try std.testing.expectEqual(0, file.tell());
+
+        var reader = file.reader(&buffer);
+        const written_string = try reader.reader.take(test_string.len);
+        try std.testing.expectEqualStrings(test_string, written_string);
+
+        _ = try file.sync();
+        _ = try file.truncate();
     }
 
     return 0;
