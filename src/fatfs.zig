@@ -581,29 +581,17 @@ pub const File = struct {
     }
 
     fn writer_drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        _ = splat;
         const wrap: *Writer = @fieldParentPtr("writer", w);
-
-        var count: usize = wrap.file.write(w.buffered()) catch |err| {
+        const buffered = w.buffered();
+        if (buffered.len != 0) return w.consume(wrap.file.write(buffered) catch |err| {
+            wrap.err = err;
+            return error.WriteFailed;
+        });
+        return wrap.file.write(data[0]) catch |err| {
             wrap.err = err;
             return error.WriteFailed;
         };
-        w.end = 0;
-
-        for (data[0 .. data.len - 1]) |slice| {
-            count += wrap.file.write(slice) catch |err| {
-                wrap.err = err;
-                return error.WriteFailed;
-            };
-        }
-
-        const last = data[data.len - 1];
-        for (0..splat) |_| {
-            count += wrap.file.write(last) catch |err| {
-                wrap.err = err;
-                return error.WriteFailed;
-            };
-        }
-        return count;
     }
 };
 
