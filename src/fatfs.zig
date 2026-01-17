@@ -186,7 +186,7 @@ pub const Dir = struct {
     pub const ReadDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
 
     pub fn next(dir: *Self) ReadDirError.Error!?FileInfo {
-        var res: c.FILINFO = undefined;
+        var res: c.FILINFO = .{};
         try ReadDirError.throw(api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
