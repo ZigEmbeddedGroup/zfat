@@ -186,7 +186,7 @@ pub const Dir = struct {
     pub const ReadDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
 
     pub fn next(dir: *Self) ReadDirError.Error!?FileInfo {
-        var res: c.FILINFO = undefined;
+        var res: c.FILINFO = .{};
         try ReadDirError.throw(api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
@@ -222,10 +222,7 @@ pub const Attributes = packed struct(u8) {
         std.debug.assert(@bitOffsetOf(Attributes, "archive") == 5);
     }
 
-    pub fn format(attrs: Attributes, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(attrs: Attributes, writer: *std.Io.Writer) !void {
         var keys = std.BoundedArray([]const u8, 8){};
         if (attrs.read_only) keys.appendAssumeCapacity("read_only");
         if (attrs.hidden) keys.appendAssumeCapacity("hidden");
@@ -285,10 +282,7 @@ pub const FileInfo = struct {
     pub const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
     pub const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
 
-    pub fn format(info: FileInfo, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(info: FileInfo, writer: *std.Io.Writer) !void {
         try writer.print(
             \\{s}{{ .size={}, .date = {}, .time = {}, .kind = .{s}, .attributes = {}, .name = '{}', .altname = '{}' }}
         , .{
@@ -338,9 +332,7 @@ pub const Date = struct {
         });
     }
 
-    pub fn format(date: Date, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+    pub fn format(date: Date, writer: *std.Io.Writer) !void {
         try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
             date.year,
             @intFromEnum(date.month),
@@ -393,9 +385,7 @@ pub const Time = struct {
         });
     }
 
-    pub fn format(time: Time, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+    pub fn format(time: Time, writer: *std.Io.Writer) !void {
         try writer.print("{d:0>2}:{d:0>2}:{d:0>2}", .{
             time.hour,
             time.minute,
@@ -537,14 +527,71 @@ pub const File = struct {
         return written;
     }
 
-    pub const Reader = std.io.Reader(*Self, ReadError.Error, read);
-    pub fn reader(file: *Self) Reader {
-        return Reader{ .context = file };
+    pub const Reader = struct {
+        file: *Self,
+        err: ?ReadError.Error = null,
+        reader: std.Io.Reader,
+    };
+
+    pub const Writer = struct {
+        file: *Self,
+        err: ?WriteError.Error = null,
+        writer: std.Io.Writer,
+    };
+
+    pub fn reader(file: *Self, buffer: []u8) Reader {
+        return .{
+            .file = file,
+            .reader = .{
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+                .vtable = comptime &.{
+                    .stream = reader_stream,
+                },
+            },
+        };
     }
 
-    pub const Writer = std.io.Writer(*Self, WriteError.Error, write);
-    pub fn writer(file: *Self) Writer {
-        return Writer{ .context = file };
+    pub fn writer(file: *Self, buffer: []u8) Writer {
+        return .{
+            .file = file,
+            .writer = .{
+                .buffer = buffer,
+                .vtable = &.{
+                    .drain = writer_drain,
+                },
+            },
+        };
+    }
+
+    fn reader_stream(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const wrap: *Reader = @fieldParentPtr("reader", r);
+
+        const buffer = limit.slice(try w.writableSliceGreedy(1));
+
+        const len = wrap.file.read(buffer) catch |err| {
+            wrap.err = err;
+            return error.ReadFailed;
+        };
+        if (len == 0)
+            return error.EndOfStream;
+        w.advance(len);
+        return len;
+    }
+
+    fn writer_drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        _ = splat;
+        const wrap: *Writer = @fieldParentPtr("writer", w);
+        const buffered = w.buffered();
+        if (buffered.len != 0) return w.consume(wrap.file.write(buffered) catch |err| {
+            wrap.err = err;
+            return error.WriteFailed;
+        });
+        return wrap.file.write(data[0]) catch |err| {
+            wrap.err = err;
+            return error.WriteFailed;
+        };
     }
 };
 
