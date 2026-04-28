@@ -1,10 +1,24 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const config = @import("config");
 const c = @cImport({
     @cInclude("ff.h");
     @cInclude("diskio.h");
 });
-const logger = std.log.scoped(.fatfs);
+const logger = if (builtin.os.tag == .freestanding)
+    struct {
+        fn debug(comptime fmt: []const u8, args: anytype) void {
+            _ = fmt;
+            _ = args;
+        }
+
+        fn err(comptime fmt: []const u8, args: anytype) void {
+            _ = fmt;
+            _ = args;
+        }
+    }
+else
+    std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
@@ -18,18 +32,18 @@ pub const Path = [:0]const PathChar;
 pub const WORD = c.WORD;
 pub const DWORD = c.DWORD;
 
-pub const MkDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const MkDirError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoPath, InvalidName, Denied, Exist, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub fn mkdir(path: Path) MkDirError.Error!void {
     try MkDirError.throw(api.mkdir(path.ptr));
 }
 
-pub const UnlinkError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub const UnlinkError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, Denied, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, Locked, OutOfMemory });
 
 pub fn unlink(path: Path) UnlinkError.Error!void {
     try UnlinkError.throw(api.unlink(path.ptr));
 }
 
-pub const RenameError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub const RenameError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, Exist, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, Locked, OutOfMemory });
 pub fn rename(
     old_path: Path,
     new_path: Path,
@@ -37,14 +51,14 @@ pub fn rename(
     try RenameError.throw(api.rename(old_path.ptr, new_path.ptr));
 }
 
-pub const StatError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const StatError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub fn stat(path: Path) StatError.Error!FileInfo {
     var res: c.FILINFO = undefined;
     try StatError.throw(api.stat(path.ptr, &res));
     return FileInfo.fromFILINFO(res);
 }
 
-pub const ChmodError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const ChmodError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub const ChmodAttributes = struct {
     read_only: ?bool = null,
     hidden: ?bool = null,
@@ -70,7 +84,7 @@ pub fn chmod(path: Path, attributes: ChmodAttributes) ChmodError.Error!void {
     try ChmodError.throw(api.chmod(path.ptr, @bitCast(values), @bitCast(mask)));
 }
 
-pub const UTimeError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const UTimeError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub fn utime(path: Path, date: Date, time: Time) UTimeError.Error!void {
     const file_info = std.mem.zeroInit(c.FILINFO, .{
         .fdate = date.encode(),
@@ -79,17 +93,17 @@ pub fn utime(path: Path, date: Date, time: Time) UTimeError.Error!void {
     try UTimeError.throw(api.utime(path.ptr, &file_info));
 }
 
-pub const ChDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const ChDirError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoPath, InvalidName, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub fn chdir(path: Path) ChDirError.Error!void {
     try ChDirError.throw(api.chdir(path.ptr));
 }
 
-pub const ChDriveError = ErrorSet(&.{FR_INVALID_DRIVE});
+pub const ChDriveError = ErrorSet(error{InvalidDrive});
 pub fn chdrive(path: Path) ChDriveError.Error!void {
     try ChDriveError.throw(api.chdrive(path.ptr));
 }
 
-pub const GetCwdError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const GetCwdError = ErrorSet(error{ DiskErr, IntErr, NotReady, NotEnabled, NoFilesystem, Timeout, OutOfMemory });
 pub fn getcwd(buffer: []PathChar) GetCwdError.Error!Path {
     try GetCwdError.throw(api.getcwd(buffer.ptr, std.math.cast(c_uint, buffer.len) orelse std.math.maxInt(c_uint)));
     return @ptrCast(std.mem.sliceTo(buffer, 0));
@@ -136,7 +150,7 @@ pub const FormatOptions = struct {
     use_partitions: bool = false,
 };
 
-pub const MkfsError = ErrorSet(&.{ FR_DISK_ERR, FR_NOT_READY, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_MKFS_ABORTED, FR_INVALID_PARAMETER, FR_NOT_ENOUGH_CORE });
+pub const MkfsError = ErrorSet(error{ DiskErr, NotReady, WriteProtected, InvalidDrive, MkfsAborted, InvalidParameter, OutOfMemory });
 pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError.Error!void {
     const opts = c.MKFS_PARM{
         .fmt = @intFromEnum(options.filesystem) | if (!options.use_partitions) @as(u8, @intCast(c.FM_SFD)) else 0,
@@ -153,7 +167,7 @@ pub const FileSystem = struct {
 
     raw: c.FATFS,
 
-    pub const MountError = ErrorSet(&.{ FR_INVALID_DRIVE, FR_DISK_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM });
+    pub const MountError = ErrorSet(error{ InvalidDrive, DiskErr, NotReady, NotEnabled, NoFilesystem });
     pub fn mount(self: *Self, drive: Path, force_mount: bool) MountError.Error!void {
         try MountError.throw(api.mount(&self.raw, drive.ptr, @intFromBool(force_mount)));
     }
@@ -168,7 +182,7 @@ pub const Dir = struct {
 
     raw: c.DIR,
 
-    pub const OpenDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_OBJECT, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+    pub const OpenDirError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoPath, InvalidName, InvalidObject, InvalidDrive, NotEnabled, NoFilesystem, Timeout, OutOfMemory, TooManyOpenFiles });
 
     pub fn open(path: Path) OpenDirError.Error!Self {
         var dir = Self{ .raw = undefined };
@@ -183,7 +197,7 @@ pub const Dir = struct {
         dir.* = undefined;
     }
 
-    pub const ReadDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+    pub const ReadDirError = ErrorSet(error{ DiskErr, IntErr, InvalidObject, Timeout, OutOfMemory });
 
     pub fn next(dir: *Self) ReadDirError.Error!?FileInfo {
         var res: c.FILINFO = .{};
@@ -427,7 +441,7 @@ pub const File = struct {
         mode: Mode = .open_existing,
     };
 
-    pub const OpenError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_INVALID_OBJECT, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+    pub const OpenError = ErrorSet(error{ DiskErr, IntErr, NotReady, NoFile, NoPath, InvalidName, Denied, Exist, InvalidObject, WriteProtected, InvalidDrive, NotEnabled, NoFilesystem, Timeout, Locked, OutOfMemory, TooManyOpenFiles });
 
     pub fn open(path: Path, flags: OpenFlags) OpenError.Error!Self {
         const int_flags = @intFromEnum(flags.mode) | @intFromEnum(flags.access);
@@ -471,22 +485,22 @@ pub const File = struct {
         file.* = undefined;
     }
 
-    pub const SyncError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub const SyncError = ErrorSet(error{ DiskErr, IntErr, InvalidObject, Timeout });
     pub fn sync(file: *Self) SyncError.Error!void {
         try SyncError.throw(api.sync(&file.raw));
     }
 
-    pub const TruncateError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub const TruncateError = ErrorSet(error{ DiskErr, IntErr, Denied, InvalidObject, Timeout });
     pub fn truncate(file: *Self) TruncateError.Error!void {
         try TruncateError.throw(api.truncate(&file.raw));
     }
 
-    pub const SeekToError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub const SeekToError = ErrorSet(error{ DiskErr, IntErr, InvalidObject, Timeout });
     pub fn seekTo(file: *Self, offset: FileSize) !void {
         try SeekToError.throw(api.lseek(&file.raw, offset));
     }
 
-    pub const ExpandError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_DENIED, FR_TIMEOUT });
+    pub const ExpandError = ErrorSet(error{ DiskErr, IntErr, InvalidObject, Denied, Timeout });
     pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
         try ExpandError.throw(api.expand(&file.raw, new_size, @intFromBool(force_allocate)));
     }
@@ -513,14 +527,14 @@ pub const File = struct {
         try self.seekTo(0);
     }
 
-    pub const WriteError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub const WriteError = ErrorSet(error{ Overflow, DiskErr, IntErr, Denied, InvalidObject, Timeout });
     pub fn write(file: *Self, data: []const u8) WriteError.Error!usize {
         var written: c_uint = 0;
         try WriteError.throw(api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
-    pub const ReadError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
+    pub const ReadError = ErrorSet(error{ Overflow, DiskErr, IntErr, Denied, InvalidObject, Timeout });
     pub fn read(file: *Self, data: []u8) ReadError.Error!usize {
         var written: c_uint = 0;
         try ReadError.throw(api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
@@ -907,26 +921,19 @@ const FR_NOT_ENOUGH_CORE = error.OutOfMemory;
 const FR_TOO_MANY_OPEN_FILES = error.TooManyOpenFiles;
 const FR_INVALID_PARAMETER = error.InvalidParameter;
 
-fn ErrorSet(comptime options: []const anyerror) type {
+fn ErrorSet(comptime ErrorType: type) type {
     return struct {
-        pub const Error: type = @Type(.{
-            .error_set = blk: {
-                var names: [options.len]std.builtin.Type.Error = undefined;
-                for (&names, options) |*name, err| {
-                    name.* = .{ .name = @errorName(err) };
-                }
-                break :blk &names;
-            },
-        });
+        pub const Error = ErrorType;
 
         pub inline fn throw(error_code: c.FRESULT) Error!void {
             const mapped_error = if (mapGenericError(error_code)) |_| {
                 return;
             } else |err| err;
 
-            inline for (options) |error_option| {
-                if (mapped_error == error_option)
-                    return error_option; // must return the comptime known value for inference
+            inline for (@typeInfo(ErrorType).error_set.?) |err_info| {
+                if (mapped_error == @field(anyerror, err_info.name)) {
+                    return @field(ErrorType, err_info.name);
+                }
             }
 
             std.debug.panic("unexpected error: {s}", .{@errorName(mapped_error)});
