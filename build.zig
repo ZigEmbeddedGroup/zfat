@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
                 break :time RtcConfig{
                     .static = .{
                         .year = year,
-                        .month = std.meta.intToEnum(std.time.epoch.Month, month) catch break :time null,
+                        .month = std.enums.fromInt(std.time.epoch.Month, month) orelse break :time null,
                         .day = day,
                     },
                 };
@@ -152,9 +152,9 @@ pub fn build(b: *std.Build) void {
                 if (list.items.len > 0) {
                     list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
                 }
-                list.writer(b.allocator).print("\"{X}\"", .{
-                    name,
-                }) catch @panic("out of memory");
+                const formatted = std.fmt.allocPrint(b.allocator, "\"{X}\"", .{name}) catch @panic("out of memory");
+                defer b.allocator.free(formatted);
+                list.appendSlice(b.allocator, formatted) catch @panic("out of memory");
             }
             config_header.addValues(.{
                 .FF_VOLUMES = @as(i64, @intCast(strings.len)),
