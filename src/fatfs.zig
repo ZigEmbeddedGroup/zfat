@@ -1,14 +1,11 @@
 const std = @import("std");
 const config = @import("config");
-const c = @cImport({
-    @cInclude("ff.h");
-    @cInclude("diskio.h");
-});
+const c = @import("c");
 const logger = std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
-pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
+pub var disks: [c.FF_VOLUMES]?*Disk = @splat(null);
 
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
@@ -279,8 +276,11 @@ pub const FileInfo = struct {
         return std.mem.sliceTo(&self.altname_buffer, 0);
     }
 
-    pub const max_name_len = if (@hasDecl(c, "FF_LFN_BUF")) c.FF_LFN_BUF else 12;
-    pub const max_altname_len = if (@hasDecl(c, "FF_SFN_BUF")) c.FF_SFN_BUF else 0;
+    pub const max_name_len = @typeInfo(@FieldType(c.FILINFO, "fname")).array.len - 1;
+    pub const max_altname_len = if (@hasField(c.FILINFO, "altname"))
+        @typeInfo(@FieldType(c.FILINFO, "altname")).array.len - 1
+    else
+        0;
 
     pub fn format(info: FileInfo, writer: *std.Io.Writer) !void {
         try writer.print(
@@ -728,7 +728,8 @@ const RtcExport = struct {
     // Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
 
     export fn get_fattime() c.DWORD {
-        const timestamp = std.time.timestamp();
+        // TODO(0.17): inject a real time source for FF_FS_NORTC == 0 builds.
+        const timestamp: i64 = 1_704_067_200;
 
         const epoch_secs = std.time.epoch.EpochSeconds{
             .secs = @as(u64, @intCast(timestamp)),
@@ -909,15 +910,7 @@ const FR_INVALID_PARAMETER = error.InvalidParameter;
 
 fn ErrorSet(comptime options: []const anyerror) type {
     return struct {
-        pub const Error: type = @Type(.{
-            .error_set = blk: {
-                var names: [options.len]std.builtin.Type.Error = undefined;
-                for (&names, options) |*name, err| {
-                    name.* = .{ .name = @errorName(err) };
-                }
-                break :blk &names;
-            },
-        });
+        pub const Error: type = GlobalError || error{Overflow};
 
         pub inline fn throw(error_code: c.FRESULT) Error!void {
             const mapped_error = if (mapGenericError(error_code)) |_| {
@@ -926,7 +919,7 @@ fn ErrorSet(comptime options: []const anyerror) type {
 
             inline for (options) |error_option| {
                 if (mapped_error == error_option)
-                    return error_option; // must return the comptime known value for inference
+                    return mapped_error; // GlobalError coerces into the (wider) Error set
             }
 
             std.debug.panic("unexpected error: {s}", .{@errorName(mapped_error)});
