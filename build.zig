@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
                 break :time RtcConfig{
                     .static = .{
                         .year = year,
-                        .month = std.meta.intToEnum(std.time.epoch.Month, month) catch break :time null,
+                        .month = @enumFromInt(month),
                         .day = day,
                     },
                 };
@@ -152,9 +152,7 @@ pub fn build(b: *std.Build) void {
                 if (list.items.len > 0) {
                     list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
                 }
-                list.writer(b.allocator).print("\"{X}\"", .{
-                    name,
-                }) catch @panic("out of memory");
+                list.appendSlice(b.allocator, b.fmt("\"{s}\"", .{name})) catch @panic("out of memory");
             }
             config_header.addValues(.{
                 .FF_VOLUMES = @as(i64, @intCast(strings.len)),
@@ -179,8 +177,8 @@ pub fn build(b: *std.Build) void {
         },
     }
 
-    inline for (comptime std.meta.fields(Config)) |fld| {
-        add_config_field(config_header, config, fld.name);
+    inline for (comptime std.meta.fieldNames(Config)) |fld_name| {
+        add_config_field(config_header, config, fld_name);
     }
 
     switch (config.rtc) {
@@ -209,6 +207,9 @@ pub fn build(b: *std.Build) void {
     _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/diskio.h"), "diskio.h");
     _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffunicode.c"), "ffunicode.c");
     _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffsystem.c"), "ffsystem.c");
+    // Umbrella header for the translate-c step (the 0.17 @cImport replacement),
+    // generated alongside the copied headers so its quote-includes resolve here.
+    const cimport_h = upstream_copy.add("cimport.h", "#include \"ff.h\"\n#include \"diskio.h\"\n");
     const upstream_copy_dir = upstream_copy.getDirectory();
 
     const zfat_mod = b.addModule("zfat", .{
@@ -230,6 +231,16 @@ pub fn build(b: *std.Build) void {
     zfat_mod.addConfigHeader(config_header);
     zfat_mod.addOptions("config", mod_options);
 
+    const translate_c = b.addTranslateC(.{
+        .root_source_file = cimport_h,
+        .target = target,
+        .optimize = optimize,
+        .link_libc = link_libc orelse false,
+    });
+    translate_c.addIncludePath(upstream_copy_dir.path(b, "."));
+    translate_c.addConfigHeader(config_header);
+    zfat_mod.addImport("c", translate_c.createModule());
+
     // usage demo:
     const exe = b.addExecutable(.{
         .name = "zfat-demo",
@@ -249,9 +260,6 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);

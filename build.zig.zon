@@ -2,10 +2,12 @@
     .name = .zfat,
     .fingerprint = 0x4212c7b5f54ad348,
     .version = "0.15.0",
+    .minimum_zig_version = "0.17.0-dev.1158+1d1193aa7",
     .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "demo",
         "src",
         "test",
         "vendor",
