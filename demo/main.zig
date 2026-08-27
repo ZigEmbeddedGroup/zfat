@@ -74,6 +74,10 @@ pub const Disk = struct {
     },
     sectors: [][sector_size]u8,
 
+    fn sectorsBytes(self: *Disk) []u8 {
+        return std.mem.sliceAsBytes(self.sectors);
+    }
+
     pub fn getStatus(interface: *fatfs.Disk) fatfs.Disk.Status {
         const self: *Disk = @fieldParentPtr("interface", interface);
         _ = self;
@@ -94,9 +98,13 @@ pub const Disk = struct {
 
         std.log.info("read({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
-        sectors.seekTo(sector * sector_size) catch return error.IoError;
-        sectors.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
+        const bytes = sector_size * count;
+        const start = sector * sector_size;
+        const disk = self.sectorsBytes();
+        if (start > disk.len) return error.IoError;
+
+        var sectors = std.Io.Reader.fixed(disk[start..]);
+        sectors.readSliceAll(buff[0..bytes]) catch return error.IoError;
     }
 
     pub fn write(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
@@ -104,9 +112,13 @@ pub const Disk = struct {
 
         std.log.info("write({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
-        sectors.seekTo(sector * sector_size) catch return error.IoError;
-        sectors.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
+        const bytes = sector_size * count;
+        const start = sector * sector_size;
+        const disk = self.sectorsBytes();
+        if (start > disk.len) return error.IoError;
+
+        var sectors = std.Io.Writer.fixed(disk[start..]);
+        sectors.writeAll(buff[0..bytes]) catch return error.IoError;
     }
 
     pub fn ioctl(interface: *fatfs.Disk, cmd: fatfs.IoCtl, buff: [*]u8) fatfs.Disk.Error!void {

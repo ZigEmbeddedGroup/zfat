@@ -1,4 +1,5 @@
 const std = @import("std");
+const Translator = @import("translate_c").Translator;
 
 fn bad_config(comptime fmt: []const u8, args: anytype) noreturn {
     std.debug.print(fmt ++ "\n", args);
@@ -14,6 +15,8 @@ pub fn build(b: *std.Build) void {
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const translate_c = b.dependency("translate_c", .{});
 
     const link_libc = b.option(bool, "libc", "Forces the linking of libc");
 
@@ -62,13 +65,13 @@ pub fn build(b: *std.Build) void {
                     break :time null;
 
                 const year = std.fmt.parseInt(u16, rtc_time[0..4], 10) catch break :time null;
-                const month = std.fmt.parseInt(u8, rtc_time[5..7], 10) catch break :time null;
+                const month = std.fmt.parseInt(u4, rtc_time[5..7], 10) catch break :time null;
                 const day = std.fmt.parseInt(u8, rtc_time[8..10], 10) catch break :time null;
 
                 break :time RtcConfig{
                     .static = .{
                         .year = year,
-                        .month = std.meta.intToEnum(std.time.epoch.Month, month) catch break :time null,
+                        .month = @fromBackingInt(month),
                         .day = day,
                     },
                 };
@@ -147,19 +150,18 @@ pub fn build(b: *std.Build) void {
             });
         },
         .named => |strings| {
-            var list: std.ArrayList(u8) = .empty;
+            var list: std.Io.Writer.Allocating = .init(b.allocator);
             for (strings) |name| {
-                if (list.items.len > 0) {
-                    list.appendSlice(b.allocator, ", ") catch @panic("out of memory");
+                if (list.writer.buffered().len > 0) {
+                    list.writer.print(",", .{}) catch @panic("OOM");
                 }
-                list.writer(b.allocator).print("\"{X}\"", .{
-                    name,
-                }) catch @panic("out of memory");
+
+                list.writer.print("\"{X}\"", .{name}) catch @panic("OOM");
             }
             config_header.addValues(.{
                 .FF_VOLUMES = @as(i64, @intCast(strings.len)),
                 .FF_STR_VOLUME_ID = 1,
-                .FF_VOLUME_STRS = list.items,
+                .FF_VOLUME_STRS = list.writer.buffered(),
             });
         },
     }
@@ -179,8 +181,8 @@ pub fn build(b: *std.Build) void {
         },
     }
 
-    inline for (comptime std.meta.fields(Config)) |fld| {
-        add_config_field(config_header, config, fld.name);
+    inline for (@typeInfo(Config).@"struct".field_names) |field_name| {
+        add_config_field(config_header, config, field_name);
     }
 
     switch (config.rtc) {
@@ -211,13 +213,12 @@ pub fn build(b: *std.Build) void {
     _ = upstream_copy.addCopyFile(b.path("vendor/fatfs/source/ffsystem.c"), "ffsystem.c");
     const upstream_copy_dir = upstream_copy.getDirectory();
 
-    const zfat_mod = b.addModule("zfat", .{
-        .root_source_file = b.path("src/fatfs.zig"),
+    const t: Translator = .init(translate_c, .{
+        .c_source_file = b.path("fatfs.h"),
         .target = target,
         .optimize = optimize,
-        .link_libc = link_libc,
     });
-    zfat_mod.addCSourceFiles(.{
+    t.mod.addCSourceFiles(.{
         .root = upstream_copy_dir,
         .files = &.{
             "ff.c",
@@ -226,8 +227,21 @@ pub fn build(b: *std.Build) void {
         },
         .flags = &.{"-std=c99"},
     });
-    zfat_mod.addIncludePath(upstream_copy_dir.path(b, "."));
-    zfat_mod.addConfigHeader(config_header);
+    t.addIncludePath(upstream_copy_dir.path(b, "."));
+    t.addConfigHeader(config_header);
+
+    const zfat_mod = b.addModule("zfat", .{
+        .root_source_file = b.path("src/fatfs.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = link_libc,
+        .imports = &.{
+            .{
+                .name = "c",
+                .module = t.mod,
+            },
+        },
+    });
     zfat_mod.addOptions("config", mod_options);
 
     // usage demo:
@@ -249,9 +263,7 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
@@ -266,7 +278,7 @@ fn add_config_field(config_header: *std.Build.Step.ConfigHeader, config: Config,
         return // we don't emit these automatically
     else if (type_info == .@"enum") {
         const macro_name = @field(macro_names, field_name);
-        config_header.addValue(macro_name, i64, @intFromEnum(value));
+        config_header.addValue(macro_name, i64, @backingInt(value));
     } else {
         const macro_name = @field(macro_names, field_name);
         config_header.addValue(macro_name, Type, value);
@@ -283,7 +295,7 @@ pub const Config = struct {
     read_only: bool = false,
     minimize: MinimizeLevel = .default,
     find: bool = false,
-    mkfs: bool = false,
+    mkfs: bool = true,
     fastseek: bool = false,
     expand: bool = false,
     chmod: bool = false,
@@ -308,7 +320,12 @@ pub const Config = struct {
     use_trim: bool = false,
     tiny: bool = false,
     exfat: bool = false,
-    rtc: RtcConfig = .dynamic,
+    // embedded targets typically have no wall clock, so timestamps are fixed
+    rtc: RtcConfig = .{ .static = .{
+        .day = 1,
+        .month = .jan,
+        .year = 2024,
+    } },
     filesystem_trust: Trust = .trust_all,
     lock: u32 = 0,
     reentrant: bool = false,

@@ -1,14 +1,11 @@
 const std = @import("std");
 const config = @import("config");
-const c = @cImport({
-    @cInclude("ff.h");
-    @cInclude("diskio.h");
-});
+const c = @import("c");
 const logger = std.log.scoped(.fatfs);
 
 pub const volume_count = c.FF_VOLUMES;
 
-pub var disks: [c.FF_VOLUMES]?*Disk = .{null} ** c.FF_VOLUMES;
+pub var disks: [c.FF_VOLUMES]?*Disk = @splat(null);
 
 pub const PathChar = c.TCHAR;
 pub const LBA = c.LBA_t;
@@ -18,40 +15,109 @@ pub const Path = [:0]const PathChar;
 pub const WORD = c.WORD;
 pub const DWORD = c.DWORD;
 
-pub const MkDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn mkdir(path: Path) MkDirError.Error!void {
-    try MkDirError.throw(api.mkdir(path.ptr));
+pub const MkDirError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_DENIED,
+    FR_EXIST,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn mkdir(path: Path) MkDirError!void {
+    try map_error(MkDirError, api.mkdir(path.ptr));
 }
 
-pub const UnlinkError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub const UnlinkError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_FILE,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_DENIED,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_LOCKED,
+    FR_NOT_ENOUGH_CORE,
+};
 
-pub fn unlink(path: Path) UnlinkError.Error!void {
-    try UnlinkError.throw(api.unlink(path.ptr));
+pub fn unlink(path: Path) UnlinkError!void {
+    try map_error(UnlinkError, api.unlink(path.ptr));
 }
 
-pub const RenameError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_EXIST, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE });
+pub const RenameError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_FILE,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_EXIST,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_LOCKED,
+    FR_NOT_ENOUGH_CORE,
+};
 pub fn rename(
     old_path: Path,
     new_path: Path,
-) RenameError.Error!void {
-    try RenameError.throw(api.rename(old_path.ptr, new_path.ptr));
+) RenameError!void {
+    try map_error(RenameError, api.rename(old_path.ptr, new_path.ptr));
 }
 
-pub const StatError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn stat(path: Path) StatError.Error!FileInfo {
+pub const StatError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_FILE,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn stat(path: Path) StatError!FileInfo {
     var res: c.FILINFO = undefined;
-    try StatError.throw(api.stat(path.ptr, &res));
+    try map_error(StatError, api.stat(path.ptr, &res));
     return FileInfo.fromFILINFO(res);
 }
 
-pub const ChmodError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+pub const ChmodError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_FILE,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
 pub const ChmodAttributes = struct {
     read_only: ?bool = null,
     hidden: ?bool = null,
     system: ?bool = null,
     archive: ?bool = null,
 };
-pub fn chmod(path: Path, attributes: ChmodAttributes) ChmodError.Error!void {
+pub fn chmod(path: Path, attributes: ChmodAttributes) ChmodError!void {
     var mask: Attributes = @bitCast(@as(u8, 0));
     var values: Attributes = @bitCast(@as(u8, 0));
 
@@ -67,31 +133,63 @@ pub fn chmod(path: Path, attributes: ChmodAttributes) ChmodError.Error!void {
         }
     }
 
-    try ChmodError.throw(api.chmod(path.ptr, @bitCast(values), @bitCast(mask)));
+    try map_error(ChmodError, api.chmod(path.ptr, @bitCast(values), @bitCast(mask)));
 }
 
-pub const UTimeError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn utime(path: Path, date: Date, time: Time) UTimeError.Error!void {
+pub const UTimeError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_FILE,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn utime(path: Path, date: Date, time: Time) UTimeError!void {
     const file_info = std.mem.zeroInit(c.FILINFO, .{
         .fdate = date.encode(),
         .ftime = time.encode(),
     });
-    try UTimeError.throw(api.utime(path.ptr, &file_info));
+    try map_error(UTimeError, api.utime(path.ptr, &file_info));
 }
 
-pub const ChDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn chdir(path: Path) ChDirError.Error!void {
-    try ChDirError.throw(api.chdir(path.ptr));
+pub const ChDirError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NO_PATH,
+    FR_INVALID_NAME,
+    FR_INVALID_DRIVE,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn chdir(path: Path) ChDirError!void {
+    try map_error(ChDirError, api.chdir(path.ptr));
 }
 
-pub const ChDriveError = ErrorSet(&.{FR_INVALID_DRIVE});
-pub fn chdrive(path: Path) ChDriveError.Error!void {
-    try ChDriveError.throw(api.chdrive(path.ptr));
+pub const ChDriveError = error{FR_INVALID_DRIVE};
+pub fn chdrive(path: Path) ChDriveError!void {
+    try map_error(ChDriveError, api.chdrive(path.ptr));
 }
 
-pub const GetCwdError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
-pub fn getcwd(buffer: []PathChar) GetCwdError.Error!Path {
-    try GetCwdError.throw(api.getcwd(buffer.ptr, std.math.cast(c_uint, buffer.len) orelse std.math.maxInt(c_uint)));
+pub const GetCwdError = error{
+    FR_DISK_ERR,
+    FR_INT_ERR,
+    FR_NOT_READY,
+    FR_NOT_ENABLED,
+    FR_NO_FILESYSTEM,
+    FR_TIMEOUT,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn getcwd(buffer: []PathChar) GetCwdError!Path {
+    try map_error(GetCwdError, api.getcwd(buffer.ptr, std.math.cast(c_uint, buffer.len) orelse std.math.maxInt(c_uint)));
     return @ptrCast(std.mem.sliceTo(buffer, 0));
 }
 
@@ -136,65 +234,94 @@ pub const FormatOptions = struct {
     use_partitions: bool = false,
 };
 
-pub const MkfsError = ErrorSet(&.{ FR_DISK_ERR, FR_NOT_READY, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_MKFS_ABORTED, FR_INVALID_PARAMETER, FR_NOT_ENOUGH_CORE });
-pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError.Error!void {
+pub const MkfsError = error{
+    FR_DISK_ERR,
+    FR_NOT_READY,
+    FR_WRITE_PROTECTED,
+    FR_INVALID_DRIVE,
+    FR_MKFS_ABORTED,
+    FR_INVALID_PARAMETER,
+    FR_NOT_ENOUGH_CORE,
+};
+pub fn mkfs(path: Path, options: FormatOptions, workspace: []u8) MkfsError!void {
     const opts = c.MKFS_PARM{
-        .fmt = @intFromEnum(options.filesystem) | if (!options.use_partitions) @as(u8, @intCast(c.FM_SFD)) else 0,
-        .n_fat = @intFromEnum(options.fats),
+        .fmt = @backingInt(options.filesystem) | if (!options.use_partitions) @as(u8, @intCast(c.FM_SFD)) else 0,
+        .n_fat = @backingInt(options.fats),
         .@"align" = options.sector_align,
         .au_size = options.cluster_size,
         .n_root = options.rootdir_size,
     };
-    try MkfsError.throw(api.mkfs(path.ptr, &opts, workspace.ptr, @as(c_uint, @intCast(@min(workspace.len, std.math.maxInt(c_uint))))));
+    try map_error(MkfsError, api.mkfs(path.ptr, &opts, workspace.ptr, @as(c_uint, @intCast(@min(workspace.len, std.math.maxInt(c_uint))))));
 }
 
 pub const FileSystem = struct {
-    const Self = @This();
-
     raw: c.FATFS,
 
-    pub const MountError = ErrorSet(&.{ FR_INVALID_DRIVE, FR_DISK_ERR, FR_NOT_READY, FR_NOT_ENABLED, FR_NO_FILESYSTEM });
-    pub fn mount(self: *Self, drive: Path, force_mount: bool) MountError.Error!void {
-        try MountError.throw(api.mount(&self.raw, drive.ptr, @intFromBool(force_mount)));
+    pub const MountError = error{
+        FR_INVALID_DRIVE,
+        FR_DISK_ERR,
+        FR_NOT_READY,
+        FR_NOT_ENABLED,
+        FR_NO_FILESYSTEM,
+    };
+    pub fn mount(fs: *FileSystem, drive: Path, force_mount: bool) MountError!void {
+        try map_error(MountError, api.mount(&fs.raw, drive.ptr, @intFromBool(force_mount)));
     }
 
-    pub fn unmount(drive: Path) MountError.Error!void {
-        try MountError.throw(api.unmount(drive.ptr));
+    pub fn unmount(drive: Path) MountError!void {
+        try map_error(MountError, api.unmount(drive.ptr));
     }
 };
 
 pub const Dir = struct {
-    const Self = @This();
-
     raw: c.DIR,
 
-    pub const OpenDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_PATH, FR_INVALID_NAME, FR_INVALID_OBJECT, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+    pub const OpenDirError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_NOT_READY,
+        FR_NO_PATH,
+        FR_INVALID_NAME,
+        FR_INVALID_OBJECT,
+        FR_INVALID_DRIVE,
+        FR_NOT_ENABLED,
+        FR_NO_FILESYSTEM,
+        FR_TIMEOUT,
+        FR_NOT_ENOUGH_CORE,
+        FR_TOO_MANY_OPEN_FILES,
+    };
 
-    pub fn open(path: Path) OpenDirError.Error!Self {
-        var dir = Self{ .raw = undefined };
-        try OpenDirError.throw(api.opendir(&dir.raw, path.ptr));
+    pub fn open(path: Path) OpenDirError!Dir {
+        var dir = Dir{ .raw = undefined };
+        try map_error(OpenDirError, api.opendir(&dir.raw, path.ptr));
         return dir;
     }
 
-    pub fn close(dir: *Self) void {
-        mapGenericError(api.closedir(&dir.raw)) catch |e| {
+    pub fn close(dir: *Dir) void {
+        map_generic_error(api.closedir(&dir.raw)) catch |e| {
             logger.err("failed to close directory: {s}", .{@errorName(e)});
         };
         dir.* = undefined;
     }
 
-    pub const ReadDirError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT, FR_NOT_ENOUGH_CORE });
+    pub const ReadDirError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+        FR_NOT_ENOUGH_CORE,
+    };
 
-    pub fn next(dir: *Self) ReadDirError.Error!?FileInfo {
+    pub fn next(dir: *Dir) ReadDirError!?FileInfo {
         var res: c.FILINFO = .{};
-        try ReadDirError.throw(api.readdir(&dir.raw, &res));
+        try map_error(ReadDirError, api.readdir(&dir.raw, &res));
         if (res.fname[0] == 0)
             return null;
         return FileInfo.fromFILINFO(res);
     }
 
-    pub fn rewind(dir: *Self) ReadDirError.Error!void {
-        try ReadDirError.throw(api.readdir(&dir.raw, null));
+    pub fn rewind(dir: *Dir) ReadDirError!void {
+        try map_error(ReadDirError, api.readdir(&dir.raw, null));
     }
 };
 
@@ -223,22 +350,32 @@ pub const Attributes = packed struct(u8) {
     }
 
     pub fn format(attrs: Attributes, writer: *std.Io.Writer) !void {
-        var keys = std.BoundedArray([]const u8, 8){};
-        if (attrs.read_only) keys.appendAssumeCapacity("read_only");
-        if (attrs.hidden) keys.appendAssumeCapacity("hidden");
-        if (attrs.system) keys.appendAssumeCapacity("system");
-        if (attrs._padding0) keys.appendAssumeCapacity("BIT3");
-        if (attrs.directory) keys.appendAssumeCapacity("directory");
-        if (attrs.archive) keys.appendAssumeCapacity("archive");
-        if (attrs._padding1) keys.appendAssumeCapacity("BIT6");
-        if (attrs._padding2) keys.appendAssumeCapacity("BIT7");
+        const bits = .{
+            .{ attrs.read_only, "read_only" },
+            .{ attrs.hidden, "hidden" },
+            .{ attrs.system, "system" },
+            .{ attrs._padding0, "BIT3" },
+            .{ attrs.directory, "directory" },
+            .{ attrs.archive, "archive" },
+            .{ attrs._padding1, "BIT6" },
+            .{ attrs._padding2, "BIT7" },
+        };
+
+        var names: [bits.len][]const u8 = undefined;
+        var names_len: usize = 0;
+        inline for (bits) |bit| {
+            if (bit[0]) {
+                names[names_len] = bit[1];
+                names_len += 1;
+            }
+        }
 
         try writer.print("{s}{{", .{@typeName(Attributes)});
 
-        if (keys.len > 0) {
+        if (names_len > 0) {
             try writer.writeAll(" ");
-            try writer.writeAll(keys.buffer[0]);
-            for (keys.slice()[1..]) |other| {
+            try writer.writeAll(names[0]);
+            for (names[1..names_len]) |other| {
                 try writer.writeAll(", ");
                 try writer.writeAll(other);
             }
@@ -319,7 +456,7 @@ pub const Date = struct {
         const enc: Encoded = @bitCast(val);
         return Date{
             .year = 1980 + @as(u16, enc.years_from_1980),
-            .month = @as(std.time.epoch.Month, @enumFromInt(enc.month)),
+            .month = @as(std.time.epoch.Month, @fromBackingInt(@intCast(enc.month))),
             .day = enc.day,
         };
     }
@@ -328,14 +465,14 @@ pub const Date = struct {
         return @bitCast(Encoded{
             .years_from_1980 = @intCast(date.year - 1980),
             .day = @intCast(date.day),
-            .month = @intFromEnum(date.month),
+            .month = @backingInt(date.month),
         });
     }
 
     pub fn format(date: Date, writer: *std.Io.Writer) !void {
         try writer.print("{d:0>4}-{d:0>2}-{d:0>2}", .{
             date.year,
-            @intFromEnum(date.month),
+            @backingInt(date.month),
             date.day,
         });
     }
@@ -404,8 +541,6 @@ pub const Time = struct {
 };
 
 pub const File = struct {
-    const Self = @This();
-
     raw: c.FIL,
 
     pub const Mode = enum(u8) {
@@ -427,19 +562,37 @@ pub const File = struct {
         mode: Mode = .open_existing,
     };
 
-    pub const OpenError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_NOT_READY, FR_NO_FILE, FR_NO_PATH, FR_INVALID_NAME, FR_DENIED, FR_EXIST, FR_INVALID_OBJECT, FR_WRITE_PROTECTED, FR_INVALID_DRIVE, FR_NOT_ENABLED, FR_NO_FILESYSTEM, FR_TIMEOUT, FR_LOCKED, FR_NOT_ENOUGH_CORE, FR_TOO_MANY_OPEN_FILES });
+    pub const OpenError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_NOT_READY,
+        FR_NO_FILE,
+        FR_NO_PATH,
+        FR_INVALID_NAME,
+        FR_DENIED,
+        FR_EXIST,
+        FR_INVALID_OBJECT,
+        FR_WRITE_PROTECTED,
+        FR_INVALID_DRIVE,
+        FR_NOT_ENABLED,
+        FR_NO_FILESYSTEM,
+        FR_TIMEOUT,
+        FR_LOCKED,
+        FR_NOT_ENOUGH_CORE,
+        FR_TOO_MANY_OPEN_FILES,
+    };
 
-    pub fn open(path: Path, flags: OpenFlags) OpenError.Error!Self {
-        const int_flags = @intFromEnum(flags.mode) | @intFromEnum(flags.access);
+    pub fn open(path: Path, flags: OpenFlags) OpenError!File {
+        const int_flags = @backingInt(flags.mode) | @backingInt(flags.access);
 
-        var file = Self{ .raw = undefined };
-        try OpenError.throw(api.open(&file.raw, path.ptr, int_flags));
+        var file = File{ .raw = undefined };
+        try map_error(OpenError, api.open(&file.raw, path.ptr, int_flags));
         return file;
     }
 
     /// Creates a new file. If the file is existing, it will be truncated and overwritten.
     /// File access is read and write.
-    pub fn create(path: Path) OpenError.Error!Self {
+    pub fn create(path: Path) OpenError!File {
         return open(path, .{
             .mode = .create_always,
             .access = .read_write,
@@ -448,7 +601,7 @@ pub const File = struct {
 
     /// Opens a file. The function fails if the file is not existing.
     /// File access is read only.
-    pub fn openRead(path: Path) OpenError.Error!Self {
+    pub fn openRead(path: Path) OpenError!File {
         return open(path, .{
             .mode = .open_existing,
             .access = .read_only,
@@ -457,89 +610,124 @@ pub const File = struct {
 
     /// Opens the file if it is existing. If not, a new file will be created.
     /// File access is read and write.
-    pub fn openWrite(path: Path) OpenError.Error!Self {
+    pub fn openWrite(path: Path) OpenError!File {
         return open(path, .{
             .mode = .open_always,
             .access = .read_write,
         });
     }
 
-    pub fn close(file: *Self) void {
-        mapGenericError(api.close(&file.raw)) catch |e| {
+    pub fn close(file: *File) void {
+        map_generic_error(api.close(&file.raw)) catch |e| {
             logger.err("failed to close file: {s}", .{@errorName(e)});
         };
         file.* = undefined;
     }
 
-    pub const SyncError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
-    pub fn sync(file: *Self) SyncError.Error!void {
-        try SyncError.throw(api.sync(&file.raw));
+    pub const SyncError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+    };
+    pub fn sync(file: *File) SyncError!void {
+        try map_error(SyncError, api.sync(&file.raw));
     }
 
-    pub const TruncateError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
-    pub fn truncate(file: *Self) TruncateError.Error!void {
-        try TruncateError.throw(api.truncate(&file.raw));
+    pub const TruncateError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_DENIED,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+    };
+    pub fn truncate(file: *File) TruncateError!void {
+        try map_error(TruncateError, api.truncate(&file.raw));
     }
 
-    pub const SeekToError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_TIMEOUT });
-    pub fn seekTo(file: *Self, offset: FileSize) !void {
-        try SeekToError.throw(api.lseek(&file.raw, offset));
+    pub const SeekToError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+    };
+    pub fn seekTo(file: *File, offset: FileSize) !void {
+        try map_error(SeekToError, api.lseek(&file.raw, offset));
     }
 
-    pub const ExpandError = ErrorSet(&.{ FR_DISK_ERR, FR_INT_ERR, FR_INVALID_OBJECT, FR_DENIED, FR_TIMEOUT });
-    pub fn expand(file: *Self, new_size: FileSize, force_allocate: bool) !void {
-        try ExpandError.throw(api.expand(&file.raw, new_size, @intFromBool(force_allocate)));
+    pub const ExpandError = error{
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_INVALID_OBJECT,
+        FR_DENIED,
+        FR_TIMEOUT,
+    };
+    pub fn expand(file: *File, new_size: FileSize, force_allocate: bool) !void {
+        try map_error(ExpandError, api.expand(&file.raw, new_size, @intFromBool(force_allocate)));
     }
 
-    // pub fn forward(self: *Self, streamer: fn([*]const u8,
-
-    pub fn endOfFile(self: Self) bool {
+    pub fn endOfFile(self: File) bool {
         return (api.eof(&self.raw) != 0);
     }
 
-    pub fn hasError(self: Self) bool {
+    pub fn hasError(self: File) bool {
         return (api.@"error"(&self.raw) != 0);
     }
 
-    pub fn tell(self: Self) FileSize {
+    pub fn tell(self: File) FileSize {
         return api.tell(&self.raw);
     }
 
-    pub fn size(self: Self) FileSize {
+    pub fn size(self: File) FileSize {
         return api.size(&self.raw);
     }
 
-    pub fn rewind(self: *Self) !void {
+    pub fn rewind(self: *File) !void {
         try self.seekTo(0);
     }
 
-    pub const WriteError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
-    pub fn write(file: *Self, data: []const u8) WriteError.Error!usize {
+    pub const WriteError = error{
+        Overflow,
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_DENIED,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+    };
+
+    pub fn write(file: *File, data: []const u8) WriteError!usize {
         var written: c_uint = 0;
-        try WriteError.throw(api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
+        try map_error(WriteError, api.write(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
-    pub const ReadError = ErrorSet(&.{ error.Overflow, FR_DISK_ERR, FR_INT_ERR, FR_DENIED, FR_INVALID_OBJECT, FR_TIMEOUT });
-    pub fn read(file: *Self, data: []u8) ReadError.Error!usize {
+    pub const ReadError = error{
+        Overflow,
+        FR_DISK_ERR,
+        FR_INT_ERR,
+        FR_DENIED,
+        FR_INVALID_OBJECT,
+        FR_TIMEOUT,
+    };
+    pub fn read(file: *File, data: []u8) ReadError!usize {
         var written: c_uint = 0;
-        try ReadError.throw(api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
+        try map_error(ReadError, api.read(&file.raw, data.ptr, std.math.cast(c_uint, data.len) orelse return error.Overflow, &written));
         return written;
     }
 
     pub const Reader = struct {
-        file: *Self,
-        err: ?ReadError.Error = null,
+        file: *File,
+        err: ?ReadError = null,
         reader: std.Io.Reader,
     };
 
     pub const Writer = struct {
-        file: *Self,
-        err: ?WriteError.Error = null,
+        file: *File,
+        err: ?WriteError = null,
         writer: std.Io.Writer,
     };
 
-    pub fn reader(file: *Self, buffer: []u8) Reader {
+    pub fn reader(file: *File, buffer: []u8) Reader {
         return .{
             .file = file,
             .reader = .{
@@ -553,7 +741,7 @@ pub const File = struct {
         };
     }
 
-    pub fn writer(file: *Self, buffer: []u8) Writer {
+    pub fn writer(file: *File, buffer: []u8) Writer {
         return .{
             .file = file,
             .writer = .{
@@ -596,35 +784,33 @@ pub const File = struct {
 };
 
 pub const Disk = struct {
-    const Self = @This();
+    getStatusFn: *const fn (self: *Disk) Status,
+    initializeFn: *const fn (self: *Disk) Disk.Error!Status,
+    readFn: *const fn (self: *Disk, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Disk.Error!void,
+    writeFn: *const fn (self: *Disk, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Disk.Error!void,
+    ioctlFn: *const fn (self: *Disk, cmd: IoCtl, buff: [*]u8) Disk.Error!void,
 
-    getStatusFn: *const fn (self: *Self) Status,
-    initializeFn: *const fn (self: *Self) Self.Error!Status,
-    readFn: *const fn (self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
-    writeFn: *const fn (self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void,
-    ioctlFn: *const fn (self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void,
-
-    pub fn getStatus(self: *Self) Status {
+    pub fn getStatus(self: *Disk) Status {
         return self.getStatusFn(self);
     }
 
-    pub fn initialize(self: *Self) Self.Error!Status {
+    pub fn initialize(self: *Disk) Disk.Error!Status {
         return self.initializeFn(self);
     }
 
-    pub fn read(self: *Self, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Self.Error!void {
+    pub fn read(self: *Disk, buff: [*]u8, sector: c.LBA_t, count: c.UINT) Disk.Error!void {
         return self.readFn(self, buff, sector, count);
     }
 
-    pub fn write(self: *Self, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Self.Error!void {
+    pub fn write(self: *Disk, buff: [*]const u8, sector: c.LBA_t, count: c.UINT) Disk.Error!void {
         return self.writeFn(self, buff, sector, count);
     }
 
-    pub fn ioctl(self: *Self, cmd: IoCtl, buff: [*]u8) Self.Error!void {
+    pub fn ioctl(self: *Disk, cmd: IoCtl, buff: [*]u8) Disk.Error!void {
         return self.ioctlFn(self, cmd, buff);
     }
 
-    fn mapResult(value: Self.Error!void) c.DRESULT {
+    fn mapResult(value: Disk.Error!void) c.DRESULT {
         if (value) |_| {
             return c.RES_OK;
         } else |err| return switch (err) {
@@ -647,7 +833,7 @@ pub const Disk = struct {
         disk_present: bool,
         write_protected: bool,
 
-        fn toInteger(self: @This()) c.DSTATUS {
+        pub fn toInteger(self: Status) c.DSTATUS {
             var i: c.DSTATUS = 0;
             if (!self.initialized) i |= @as(u8, @intCast(c.STA_NOINIT));
             if (!self.disk_present) i |= @as(u8, @intCast(c.STA_NODISK));
@@ -728,7 +914,11 @@ const RtcExport = struct {
     // Current local time shall be returned as bit-fields packed into a DWORD value. The bit fields are as follows:
 
     export fn get_fattime() c.DWORD {
-        const timestamp = std.time.timestamp();
+        // The C ABI leaves no way to thread an `Io` parameter through here, so
+        // use the globally available debug instance for the wall clock.
+        const io = std.Options.debug_io;
+        const ns = std.Io.Clock.now(.real, io).nanoseconds;
+        const timestamp: i64 = @intCast(@divTrunc(ns, std.time.ns_per_s));
 
         const epoch_secs = std.time.epoch.EpochSeconds{
             .secs = @as(u64, @intCast(timestamp)),
@@ -741,7 +931,7 @@ const RtcExport = struct {
         const month_and_day = year_and_day.calculateMonthDay();
 
         const year = year_and_day.year;
-        const month = @intFromEnum(month_and_day.month);
+        const month = @backingInt(month_and_day.month);
         const day = month_and_day.day_index + 1;
 
         const hour = day_secs.getHoursIntoDay();
@@ -819,7 +1009,7 @@ export fn disk_ioctl(
 ) c.DRESULT {
     const disk = disks[pdrv] orelse return c.RES_NOTRDY;
     logger.debug("disk.ioctl({}, {}, {*})", .{ pdrv, cmd, buff });
-    return Disk.mapResult(disk.ioctl(@as(IoCtl, @enumFromInt(cmd)), buff));
+    return Disk.mapResult(disk.ioctl(@as(IoCtl, @fromBackingInt(@intCast(cmd))), buff));
 }
 
 pub const IoCtl = enum(u8) {
@@ -887,75 +1077,23 @@ pub const GlobalError = error{
     InvalidParameter,
 };
 
-const FR_DISK_ERR = error.DiskErr;
-const FR_INT_ERR = error.IntErr;
-const FR_NOT_READY = error.NotReady;
-const FR_NO_FILE = error.NoFile;
-const FR_NO_PATH = error.NoPath;
-const FR_INVALID_NAME = error.InvalidName;
-const FR_DENIED = error.Denied;
-const FR_EXIST = error.Exist;
-const FR_INVALID_OBJECT = error.InvalidObject;
-const FR_WRITE_PROTECTED = error.WriteProtected;
-const FR_INVALID_DRIVE = error.InvalidDrive;
-const FR_NOT_ENABLED = error.NotEnabled;
-const FR_NO_FILESYSTEM = error.NoFilesystem;
-const FR_MKFS_ABORTED = error.MkfsAborted;
-const FR_TIMEOUT = error.Timeout;
-const FR_LOCKED = error.Locked;
-const FR_NOT_ENOUGH_CORE = error.OutOfMemory;
-const FR_TOO_MANY_OPEN_FILES = error.TooManyOpenFiles;
-const FR_INVALID_PARAMETER = error.InvalidParameter;
-
-fn ErrorSet(comptime options: []const anyerror) type {
-    return struct {
-        pub const Error: type = @Type(.{
-            .error_set = blk: {
-                var names: [options.len]std.builtin.Type.Error = undefined;
-                for (&names, options) |*name, err| {
-                    name.* = .{ .name = @errorName(err) };
-                }
-                break :blk &names;
-            },
-        });
-
-        pub inline fn throw(error_code: c.FRESULT) Error!void {
-            const mapped_error = if (mapGenericError(error_code)) |_| {
-                return;
-            } else |err| err;
-
-            inline for (options) |error_option| {
-                if (mapped_error == error_option)
-                    return error_option; // must return the comptime known value for inference
-            }
-
-            std.debug.panic("unexpected error: {s}", .{@errorName(mapped_error)});
-        }
-    };
+pub inline fn map_generic_error(code: c.FRESULT) GlobalError!void {
+    try map_error(GlobalError, code);
 }
 
-pub inline fn mapGenericError(code: c.FRESULT) GlobalError!void {
-    return switch (code) {
-        c.FR_OK => {},
-        c.FR_DISK_ERR => error.DiskErr,
-        c.FR_INT_ERR => error.IntErr,
-        c.FR_NOT_READY => error.NotReady,
-        c.FR_NO_FILE => error.NoFile,
-        c.FR_NO_PATH => error.NoPath,
-        c.FR_INVALID_NAME => error.InvalidName,
-        c.FR_DENIED => error.Denied,
-        c.FR_EXIST => error.Exist,
-        c.FR_INVALID_OBJECT => error.InvalidObject,
-        c.FR_WRITE_PROTECTED => error.WriteProtected,
-        c.FR_INVALID_DRIVE => error.InvalidDrive,
-        c.FR_NOT_ENABLED => error.NotEnabled,
-        c.FR_NO_FILESYSTEM => error.NoFilesystem,
-        c.FR_MKFS_ABORTED => error.MkfsAborted,
-        c.FR_TIMEOUT => error.Timeout,
-        c.FR_LOCKED => error.Locked,
-        c.FR_NOT_ENOUGH_CORE => error.OutOfMemory,
-        c.FR_TOO_MANY_OPEN_FILES => error.TooManyOpenFiles,
-        c.FR_INVALID_PARAMETER => error.InvalidParameter,
-        else => unreachable,
-    };
+pub inline fn map_error(comptime ErrorSet: type, code: c.FRESULT) ErrorSet!void {
+    if (code == c.FR_OK)
+        return;
+
+    const error_names = @typeInfo(ErrorSet).error_set.error_names orelse
+        @panic("Unrecognized error code");
+
+    inline for (error_names) |error_name| {
+        if (@hasDecl(c, error_name)) {
+            if (@field(c, error_name) == code)
+                return @field(ErrorSet, error_name);
+        }
+    }
+
+    @panic("Unrecognized error code");
 }
