@@ -217,6 +217,7 @@ pub fn build(b: *std.Build) void {
         .c_source_file = b.path("fatfs.h"),
         .target = target,
         .optimize = optimize,
+        .default_init = true,
     });
     t.mod.addCSourceFiles(.{
         .root = upstream_copy_dir,

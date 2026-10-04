@@ -9,9 +9,9 @@ const zfat = @import("zfat");
 var global_fs: [5]zfat.FileSystem = undefined;
 
 // requires pointer stability
-var ramdisks = [1]RamDisk{.{}} ** 5;
+var ramdisks: [5]RamDisk = @splat(.{});
 
-pub const std_options = std.Options{
+pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
@@ -242,7 +242,11 @@ fn writeFile(path: zfat.Path, contents: []const u8) !void {
     var file = try zfat.File.create(path);
     defer file.close();
 
-    try file.writer().writeAll(contents);
+    var buff: [1024]u8 = undefined;
+    var file_writer = file.writer(&buff);
+
+    try file_writer.writer.writeAll(contents);
+    try file_writer.writer.flush();
 }
 
 pub const RamDisk = struct {
@@ -256,6 +260,10 @@ pub const RamDisk = struct {
         .ioctlFn = ioctl,
     },
     sectors: [][sector_size]u8 = &.{},
+
+    fn sectorsBytes(self: *RamDisk) []u8 {
+        return std.mem.sliceAsBytes(self.sectors);
+    }
 
     pub fn init(rd: *RamDisk, sector_count: usize) !void {
         rd.* = .{};
@@ -271,7 +279,7 @@ pub const RamDisk = struct {
 
     pub fn getStatus(interface: *zfat.Disk) zfat.Disk.Status {
         const self: *RamDisk = @fieldParentPtr("interface", interface);
-        return zfat.Disk.Status{
+        return .{
             .initialized = (self.sectors.len > 0),
             .disk_present = true,
             .write_protected = false,
@@ -288,9 +296,13 @@ pub const RamDisk = struct {
 
         std.log.debug("read({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
-        sectors.seekTo(sector * sector_size) catch return error.IoError;
-        sectors.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
+        const bytes = sector_size * count;
+        const start = sector * sector_size;
+        const disk = self.sectorsBytes();
+        if (start > disk.len) return error.IoError;
+
+        var sectors = std.Io.Reader.fixed(disk[start..]);
+        sectors.readSliceAll(buff[0..bytes]) catch return error.IoError;
     }
 
     pub fn write(interface: *zfat.Disk, buff: [*]const u8, sector: zfat.LBA, count: c_uint) zfat.Disk.Error!void {
@@ -298,9 +310,13 @@ pub const RamDisk = struct {
 
         std.log.debug("write({*}, {}, {})", .{ buff, sector, count });
 
-        var sectors = std.io.fixedBufferStream(std.mem.sliceAsBytes(self.sectors));
-        sectors.seekTo(sector * sector_size) catch return error.IoError;
-        sectors.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
+        const bytes = sector_size * count;
+        const start = sector * sector_size;
+        const disk = self.sectorsBytes();
+        if (start > disk.len) return error.IoError;
+
+        var sectors = std.Io.Writer.fixed(disk[start..]);
+        sectors.writeAll(buff[0..bytes]) catch return error.IoError;
     }
 
     pub fn ioctl(interface: *zfat.Disk, cmd: zfat.IoCtl, buff: [*]u8) zfat.Disk.Error!void {
